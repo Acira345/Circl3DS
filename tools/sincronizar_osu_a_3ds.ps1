@@ -12,7 +12,7 @@ try {
 } catch {}
 
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "   osu! 3DS - Sincronizador Universal de Mapas (Stable + Lazer)" -ForegroundColor Cyan
+Write-Host "   Circl3DS - Sincronizador Universal de Mapas" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 
 $stablePath  = Join-Path $env:LOCALAPPDATA "osu!\Songs"
