@@ -13,7 +13,8 @@ El juego está ultra-optimizado para funcionar a **60 FPS estables** incluso en 
 Escanea el siguiente código QR desde la aplicación **FBI** en tu consola (`Remote Install` ➔ `Scan QR Code`) para descargar e instalar el archivo `.cia` directamente vía Wi-Fi:
 
 <div align="center">
-  <img width="1148" height="1148" alt="Circl3DS V1" src="https://github.com/user-attachments/assets/100cdcaa-3c61-41cb-90c4-b0bffbaeb3ca" />
+  <img width="1148" height="1148" alt="Circl3DS V1 1" src="https://github.com/user-attachments/assets/caf11eb2-5c56-48ac-97c4-492636781a1e" />
+
 
 
   <p><i>Requiere conexión Wi-Fi activa y Custom Firmware (Luma3DS).</i></p>
