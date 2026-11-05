@@ -50,7 +50,7 @@ class Room:
         self.host_name = "Host"
         self.player_count = 1
 
-class Osu3dsRelayServer:
+class Circl3dsRelayServer:
     def __init__(self, host="0.0.0.0", udp_port=MULTI_UDP_PORT, tcp_port=MULTI_TCP_PORT):
         self.host = host
         self.udp_port = udp_port
@@ -315,5 +315,5 @@ if __name__ == "__main__":
             port = int(sys.argv[1])
         except ValueError:
             pass
-    server = Osu3dsRelayServer(udp_port=port, tcp_port=port+1)
+    server = Circl3dsRelayServer(udp_port=port, tcp_port=port+1)
     server.start()

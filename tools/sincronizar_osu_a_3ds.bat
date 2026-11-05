@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-title Sincronizador de Canciones osu! para Nintendo 3DS
+title Sincronizador de Canciones para Circl3DS (Nintendo 3DS)
 
 echo =======================================================
-echo    Sincronizador osu! (Stable / Lazer) a Nintendo 3DS
+echo    Sincronizador de Canciones a Circl3DS (Nintendo 3DS)
 echo =======================================================
 echo.
 echo Iniciando script de sincronizacion con permisos de ejecucion...

@@ -137,7 +137,7 @@ if (-not [string]::IsNullOrWhiteSpace($Ip3DS)) {
                 }
             } else {
                 $res.StatusCode = 200
-                $msg = [System.Text.Encoding]::UTF8.GetBytes("Puente HTTP de osu! 3DS Activo")
+                $msg = [System.Text.Encoding]::UTF8.GetBytes("Puente HTTP de Circl3DS Activo")
                 $res.OutputStream.Write($msg, 0, $msg.Length)
                 $res.OutputStream.Close()
             }
@@ -151,7 +151,7 @@ if (-not [string]::IsNullOrWhiteSpace($Ip3DS)) {
         if ([string]::IsNullOrWhiteSpace($DestinoSD)) {
             $DestinoSD = Join-Path (Split-Path -Parent $PSScriptRoot) "songs_para_3ds"
         } elseif ($DestinoSD -match "^[a-zA-Z]:\\?$") {
-            $DestinoSD = Join-Path ($DestinoSD.TrimEnd('\') + "\") "3ds\osu-3ds\songs"
+            $DestinoSD = Join-Path ($DestinoSD.TrimEnd('\') + "\") "3ds\circl3ds\songs"
         }
     }
 }
@@ -388,7 +388,7 @@ Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  Proceso finalizado. Total de mapas transferidos: $totalProcesados" -ForegroundColor Green
 if (-not $modoWiFi -and $totalProcesados -gt 0) {
-    Write-Host "  Nota: Al iniciar osu-3ds en tu consola, los archivos .osz en" -ForegroundColor Gray
-    Write-Host "  'sdmc:/3ds/osu-3ds/songs/' se extraeran e instalaran solos." -ForegroundColor Gray
+    Write-Host "  Nota: Al iniciar Circl3DS en tu consola, los archivos .osz en" -ForegroundColor Gray
+    Write-Host "  'sdmc:/3ds/circl3ds/songs/' se extraeran e instalaran solos." -ForegroundColor Gray
 }
 Write-Host "================================================================" -ForegroundColor Cyan

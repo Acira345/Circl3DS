@@ -617,8 +617,8 @@ def main():
     parser = argparse.ArgumentParser(description="Generador 3D/2D de Banner, Icono y Malla para osu! 3DS")
     parser.add_argument("--banner", default="banner.png", help="Ruta de salida para banner.png")
     parser.add_argument("--icon", default="icon.png", help="Ruta de salida para icon.png")
-    parser.add_argument("--obj", default="osu_medallion_3d.obj", help="Ruta de salida para osu_medallion_3d.obj")
-    parser.add_argument("--mtl", default="osu_medallion_3d.mtl", help="Ruta de salida para osu_medallion_3d.mtl")
+    parser.add_argument("--obj", default="circl_medallion_3d.obj", help="Ruta de salida para circl_medallion_3d.obj")
+    parser.add_argument("--mtl", default="circl_medallion_3d.mtl", help="Ruta de salida para circl_medallion_3d.mtl")
     parser.add_argument("--out-dir", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets"), help="Directorio base de salida (por defecto: assets/ del repo)")
     
     args = parser.parse_args()
