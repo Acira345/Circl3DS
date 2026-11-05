@@ -4,7 +4,7 @@ param(
 )
 
 Write-Host "=============================================================" -ForegroundColor Cyan
-Write-Host "  osu! 3DS - Converter for Bachground Videos (256x128 15fps)" -ForegroundColor Cyan
+Write-Host "  Circl3DS - Converter for Background Videos (256x128 15fps)" -ForegroundColor Cyan
 Write-Host "=============================================================" -ForegroundColor Cyan
 
 if (-not (Get-Command "ffmpeg" -ErrorAction SilentlyContinue)) {
@@ -17,7 +17,7 @@ if (-not (Get-Command "ffmpeg" -ErrorAction SilentlyContinue)) {
 
 if (-not (Test-Path $songfolder)) {
     Write-Host "[!] The folder '$songfolder' does not exist." -ForegroundColor Red
-    Write-Host "    Use: .\convert_videos_3ds.ps1 -songfolder 'E:\3ds\osu-3ds\songs'" -ForegroundColor Gray
+    Write-Host "    Use: .\convert_videos_3ds.ps1 -songfolder 'E:\3ds\circl3ds\songs'" -ForegroundColor Gray
     exit 1
 }
 

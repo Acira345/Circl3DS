@@ -34,6 +34,103 @@ struct WavSample {
 
 class AudioPlayer {
 private:
+    struct Mp3StreamIo {
+        FILE* file = nullptr;
+        uint64_t fileSize = 0;
+        mp3dec_io_t io{};
+
+        static size_t readCb(void* buf, size_t size, void* userData) {
+            Mp3StreamIo* self = static_cast<Mp3StreamIo*>(userData);
+            if (!self || !self->file) return 0;
+            return std::fread(buf, 1, size, self->file);
+        }
+
+        static int seekCb(uint64_t position, void* userData) {
+            Mp3StreamIo* self = static_cast<Mp3StreamIo*>(userData);
+            if (!self || !self->file) return -1;
+            return std::fseek(self->file, static_cast<long>(position), SEEK_SET);
+        }
+
+        bool open(const std::string& path) {
+            close();
+            file = std::fopen(path.c_str(), "rb");
+            if (!file) return false;
+            if (std::fseek(file, 0, SEEK_END) != 0) {
+                close();
+                return false;
+            }
+            long sz = std::ftell(file);
+            if (sz <= 0 || std::fseek(file, 0, SEEK_SET) != 0) {
+                close();
+                return false;
+            }
+            fileSize = static_cast<uint64_t>(sz);
+            io.read = readCb;
+            io.read_data = this;
+            io.seek = seekCb;
+            io.seek_data = this;
+            return true;
+        }
+
+        void close() {
+            if (file) {
+                std::fclose(file);
+                file = nullptr;
+            }
+            fileSize = 0;
+        }
+
+        ~Mp3StreamIo() {
+            close();
+        }
+    };
+
+    static bool seekMp3ToMs(mp3dec_ex_t& dec, Mp3StreamIo* io, int targetMs, u32 sr, u16 ch, u64& outSeekSamples) {
+        if (sr == 0 || ch == 0) {
+            outSeekSamples = 0;
+            return false;
+        }
+        u64 logicalSamples = (targetMs > 0) ? ((static_cast<u64>(targetMs) * sr) / 1000ULL) : 0;
+        if (!(dec.flags & MP3D_SEEK_TO_SAMPLE)) {
+            uint64_t totalBytes = io ? io->fileSize : static_cast<uint64_t>(dec.file.size);
+            uint64_t startByte = dec.start_offset;
+            uint64_t endByte = (!io && dec.end_offset > startByte && dec.end_offset <= totalBytes) ? dec.end_offset : totalBytes;
+            uint64_t audioBytes = (endByte > startByte) ? (endByte - startByte) : 0;
+            uint64_t targetByte = startByte;
+            if (targetMs > 0 && audioBytes > 0) {
+                if (dec.detected_samples > 0) {
+                    uint64_t targetChSamples = logicalSamples * ch;
+                    if (targetChSamples >= dec.detected_samples) {
+                        targetByte = startByte + (audioBytes * 3) / 4;
+                    } else {
+                        targetByte = startByte + (audioBytes * targetChSamples) / dec.detected_samples;
+                    }
+                } else {
+                    uint64_t kbps = (dec.info.bitrate_kbps > 0) ? static_cast<uint64_t>(dec.info.bitrate_kbps) : 128ULL;
+                    uint64_t byteDelta = (static_cast<uint64_t>(targetMs) * kbps) / 8ULL;
+                    if (byteDelta >= audioBytes) byteDelta = (audioBytes * 3) / 4;
+                    targetByte = startByte + byteDelta;
+                }
+            }
+            if (mp3dec_ex_seek(&dec, targetByte) == 0) {
+                outSeekSamples = logicalSamples;
+                return true;
+            }
+            outSeekSamples = 0;
+            return false;
+        } else {
+            uint64_t targetSample = logicalSamples * ch;
+            if (mp3dec_ex_seek(&dec, targetSample) == 0) {
+                outSeekSamples = dec.cur_sample / ch;
+                return true;
+            }
+            outSeekSamples = logicalSamples;
+            return false;
+        }
+    }
+
+    Mp3StreamIo* mp3Io = nullptr;
+private:
     mp3dec_ex_t mp3;
     stb_vorbis* vorbisStream = nullptr;
     bool usingVorbis = false;
@@ -85,6 +182,7 @@ private:
     // un hilo secundario sin congelar la interfaz ni los 60 FPS del selector.
     // =========================================================================
     struct PreparedPreview {
+        Mp3StreamIo* mp3Io = nullptr;
         mp3dec_ex_t mp3;
         stb_vorbis* vorbisStream = nullptr;
         bool usingVorbis = false;
@@ -105,6 +203,7 @@ private:
         }
 
         void reset() {
+            mp3Io = nullptr;
             std::memset(&mp3, 0, sizeof(mp3));
             vorbisStream = nullptr;
             usingVorbis = false;
@@ -124,6 +223,14 @@ private:
         }
 
         void release() {
+            if (!usingVorbis && mp3Io) {
+                if (mp3.file.buffer) {
+                    mp3dec_ex_close(&mp3);
+                }
+                std::memset(&mp3, 0, sizeof(mp3));
+                delete mp3Io;
+                mp3Io = nullptr;
+            }
             if (usingVorbis) {
                 if (vorbisStream) {
                     stb_vorbis_close(vorbisStream);
@@ -198,10 +305,14 @@ private:
 
             if (!p.usingVorbis) {
                 std::memset(&p.mp3, 0, sizeof(p.mp3));
-                if (mp3dec_ex_open(&p.mp3, path.c_str(), MP3D_SEEK_TO_SAMPLE) == 0 && p.mp3.info.hz > 0) {
+                p.mp3Io = new Mp3StreamIo();
+                if (p.mp3Io->open(path) && mp3dec_ex_open_cb(&p.mp3, &p.mp3Io->io, MP3D_SEEK_TO_BYTE | MP3D_DO_NOT_SCAN) == 0 && p.mp3.info.hz > 0) {
                     p.sampleRate = static_cast<u32>(p.mp3.info.hz);
                     p.musicChannels = (p.mp3.info.channels == 1) ? 1 : 2;
                 } else {
+                    if (p.mp3.file.buffer) mp3dec_ex_close(&p.mp3);
+                    std::memset(&p.mp3, 0, sizeof(p.mp3));
+                    if (p.mp3Io) { delete p.mp3Io; p.mp3Io = nullptr; }
                     int err = 0;
                     p.vorbisStream = stb_vorbis_open_filename(path.c_str(), &err, nullptr);
                     if (!p.vorbisStream) {
@@ -228,10 +339,7 @@ private:
                         p.seekOffsetSamples = (act >= 0) ? static_cast<u64>(act) : targetFrame;
                     }
                 } else if (p.sampleRate > 0 && p.musicChannels > 0) {
-                    uint64_t targetSample = (static_cast<uint64_t>(startOff) * p.sampleRate * p.musicChannels) / 1000ULL;
-                    if (mp3dec_ex_seek(&p.mp3, targetSample) == 0) {
-                        p.seekOffsetSamples = p.mp3.cur_sample / p.musicChannels;
-                    }
+                    seekMp3ToMs(p.mp3, p.mp3Io, startOff, p.sampleRate, p.musicChannels, p.seekOffsetSamples);
                 }
             }
 
@@ -261,6 +369,22 @@ private:
                     if (frames > 0) samplesRead = static_cast<size_t>(frames) * p.musicChannels;
                 } else {
                     samplesRead = mp3dec_ex_read(&p.mp3, p.audioBuffer[i], samplesToRead);
+                }
+                if (i == 0 && samplesRead == 0 && startOff > 0) {
+                    // Si el PreviewTime del .osu excede la duración real del audio, rebobinar al inicio (0 ms)
+                    if (p.usingVorbis && p.vorbisStream) {
+                        stb_vorbis_seek(p.vorbisStream, 0);
+                        int frames = stb_vorbis_get_samples_short_interleaved(
+                            p.vorbisStream, p.musicChannels, p.audioBuffer[i], static_cast<int>(samplesToRead)
+                        );
+                        if (frames > 0) samplesRead = static_cast<size_t>(frames) * p.musicChannels;
+                    } else {
+                        p.mp3.last_error = 0;
+                        seekMp3ToMs(p.mp3, p.mp3Io, 0, p.sampleRate, p.musicChannels, p.seekOffsetSamples);
+                        samplesRead = mp3dec_ex_read(&p.mp3, p.audioBuffer[i], samplesToRead);
+                    }
+                    p.startOffsetMs = 0;
+                    p.seekOffsetSamples = 0;
                 }
                 if (samplesRead > 0) {
                     DSP_FlushDataCache(p.audioBuffer[i], samplesRead * sizeof(s16));
@@ -703,11 +827,12 @@ public:
         svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
         s32 workerPrio = std::min<s32>(0x3F, prio + 1);
 
-        if (isNew3DS) {
-            // En New 3DS / New 2DS XL ejecutamos en el núcleo 2 dedicado a 804 MHz
+        APT_SetAppCpuTimeLimit(isNew3DS ? 70 : 30);
+        // Ejecutar en el núcleo 1 para paralelizar con AsyncTextureLoader (que usa el núcleo 2 en New 3DS)
+        previewWorker = threadCreate(previewThreadMain, this, 64 * 1024, workerPrio, 1, false);
+        if (isNew3DS && !previewWorker) {
             previewWorker = threadCreate(previewThreadMain, this, 64 * 1024, workerPrio, 2, false);
         }
-        if (!previewWorker) previewWorker = threadCreate(previewThreadMain, this, 64 * 1024, workerPrio, 1, false);
         if (!previewWorker) previewWorker = threadCreate(previewThreadMain, this, 64 * 1024, workerPrio, -2, false);
         return previewWorker != nullptr;
     }
@@ -802,6 +927,8 @@ public:
             stopMusicInternal();
 
             mp3 = p.mp3;
+            mp3Io = p.mp3Io;
+            p.mp3Io = nullptr;
             vorbisStream = p.vorbisStream;
             usingVorbis = p.usingVorbis;
             sampleRate = p.sampleRate;
@@ -1053,7 +1180,7 @@ public:
         }
 
         if (!usingVorbis) {
-            if (mp3dec_ex_open(&mp3, filepath.c_str(), MP3D_SEEK_TO_SAMPLE) == 0 && mp3.info.hz > 0) {
+            if (mp3dec_ex_open(&mp3, filepath.c_str(), MP3D_SEEK_TO_SAMPLE | MP3D_DO_NOT_SCAN) == 0 && mp3.info.hz > 0) {
                 sampleRate = static_cast<u32>(mp3.info.hz);
                 musicChannels = (mp3.info.channels == 1) ? 1 : 2;
             } else {
@@ -1077,10 +1204,7 @@ public:
                     seekOffsetSamples = (act >= 0) ? static_cast<u64>(act) : targetFrame;
                 }
             } else if (sampleRate > 0 && musicChannels > 0) {
-                uint64_t targetSample = (static_cast<uint64_t>(startOffsetMs) * sampleRate * musicChannels) / 1000ULL;
-                if (mp3dec_ex_seek(&mp3, targetSample) == 0) {
-                    seekOffsetSamples = mp3.cur_sample / musicChannels;
-                }
+                seekMp3ToMs(mp3, mp3Io, startOffsetMs, sampleRate, musicChannels, seekOffsetSamples);
             }
         }
 
@@ -1187,7 +1311,8 @@ public:
             if (usingVorbis && vorbisStream) {
                 stb_vorbis_seek(vorbisStream, 0);
             } else {
-                mp3dec_ex_seek(&mp3, 0);
+                u64 dummySeek = 0;
+                seekMp3ToMs(mp3, mp3Io, 0, sampleRate, musicChannels, dummySeek);
             }
             if (dspReady) {
                 ndspChnReset(musicChannel);
@@ -1208,14 +1333,8 @@ public:
             seekOffsetSamples = targetFrame;
             totalSamplesPlayed = targetFrame;
         } else if (musicChannels > 0) {
-            uint64_t targetSample = (static_cast<uint64_t>(targetMs) * sampleRate * musicChannels) / 1000ULL;
-            if (mp3dec_ex_seek(&mp3, targetSample) == 0) {
-                seekOffsetSamples = mp3.cur_sample / musicChannels;
-                totalSamplesPlayed = seekOffsetSamples;
-            } else {
-                seekOffsetSamples = (static_cast<u64>(targetMs) * sampleRate) / 1000ULL;
-                totalSamplesPlayed = seekOffsetSamples;
-            }
+            seekMp3ToMs(mp3, mp3Io, targetMs, sampleRate, musicChannels, seekOffsetSamples);
+            totalSamplesPlayed = seekOffsetSamples;
         } else {
             seekOffsetSamples = (static_cast<u64>(targetMs) * sampleRate) / 1000ULL;
             totalSamplesPlayed = seekOffsetSamples;
@@ -1271,12 +1390,8 @@ public:
                 if (act >= 0) targetFrame = static_cast<unsigned int>(act);
                 seekOffsetSamples = targetFrame;
             } else {
-                uint64_t targetSample = (static_cast<uint64_t>(loopOffsetMs) * sampleRate * musicChannels) / 1000ULL;
-                if (mp3dec_ex_seek(&mp3, targetSample) == 0) {
-                    seekOffsetSamples = mp3.cur_sample / musicChannels;
-                } else {
-                    mp3dec_ex_seek(&mp3, 0);
-                    seekOffsetSamples = 0;
+                if (!seekMp3ToMs(mp3, mp3Io, loopOffsetMs, sampleRate, musicChannels, seekOffsetSamples)) {
+                    seekMp3ToMs(mp3, mp3Io, 0, sampleRate, musicChannels, seekOffsetSamples);
                 }
             }
 
@@ -1376,6 +1491,10 @@ public:
     }
 
     void stopMusicInternal() {
+        if (mp3Io && !isLoaded) {
+            delete mp3Io;
+            mp3Io = nullptr;
+        }
         if (isLoaded) {
             isPlaying = false;
             isPaused = false;
@@ -1403,6 +1522,10 @@ public:
                 if (audioBuffer[i]) { linearFree(audioBuffer[i]); audioBuffer[i] = nullptr; }
             }
             isLoaded = false;
+            if (mp3Io) {
+                delete mp3Io;
+                mp3Io = nullptr;
+            }
         }
     }
 

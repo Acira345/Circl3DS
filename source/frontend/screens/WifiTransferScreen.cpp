@@ -70,7 +70,7 @@ void runWifiTransferScreen(AppContext& ctx) {
         C2D_DrawRectSolid(0.0f, 25.0f, 0.15f, 400.0f, 1.0f, Ui::rgba(0, 229, 255));
 
         Ui::slantRectGrad(8.0f + dCard, 3.5f, 85.0f, 19.0f, -4.0f, 0.25f, Ui::rgba(255, 42, 133), Ui::rgba(215, 25, 105));
-        drawCenteredTextWithShadow(ctx.textBuf, 50.0f + dCard, 13.0f, 0.35f, ctx.clrWhite, "osu!3DS", 0.30f);
+        drawCenteredTextWithShadow(ctx.textBuf, 50.0f + dCard, 13.0f, 0.35f, ctx.clrWhite, "Circl3DS", 0.30f);
 
         drawTextWithShadow(ctx.textBuf, 102.0f + dCard, 6.0f, 0.38f, ctx.clrWhite, LOC(STR_WIFI_PORTAL_TITLE), 0.30f);
 

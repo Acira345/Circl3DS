@@ -62,17 +62,23 @@ void runMultiBrowserScreen(AppContext& ctx) {
 
     // 2. Entradas Táctiles
     if (ctx.touchJustDown) {
-        // Selector de Modo de Red (UDS vs LAN) en la barra táctil superior
+        // Selector de Modo de Red (UDS, LAN, ONLINE) en la barra táctil superior
         if (ctx.touch.py >= 32.0f && ctx.touch.py <= 58.0f) {
-            if (ctx.touch.px >= 10.0f && ctx.touch.px <= 155.0f) {
+            if (ctx.touch.px >= 10.0f && ctx.touch.px <= 106.0f) {
                 if (ctx.multiMgr.netMode != MultiNetworkMode::NET_MODE_UDS) {
                     ctx.audio.playHitSound(1);
-                    ctx.multiMgr.toggleNetworkMode();
+                    ctx.multiMgr.setNetworkMode(MultiNetworkMode::NET_MODE_UDS);
                 }
-            } else if (ctx.touch.px >= 165.0f && ctx.touch.px <= 310.0f) {
+            } else if (ctx.touch.px >= 112.0f && ctx.touch.px <= 208.0f) {
                 if (ctx.multiMgr.netMode != MultiNetworkMode::NET_MODE_LAN) {
                     ctx.audio.playHitSound(1);
-                    ctx.multiMgr.toggleNetworkMode();
+                    ctx.multiMgr.setNetworkMode(MultiNetworkMode::NET_MODE_LAN);
+                }
+            } else if (ctx.touch.px >= 214.0f && ctx.touch.px <= 310.0f) {
+                if (ctx.multiMgr.netMode != MultiNetworkMode::NET_MODE_ONLINE) {
+                    ctx.audio.playHitSound(1);
+                    ctx.multiMgr.setOnlineServer(ctx.settings.onlineServerHost, ctx.settings.onlineServerPort);
+                    ctx.multiMgr.setNetworkMode(MultiNetworkMode::NET_MODE_ONLINE);
                 }
             }
         }
@@ -144,11 +150,13 @@ void runMultiBrowserScreen(AppContext& ctx) {
         // Barra Superior estilizada
         float dBar = depthShift(1.8f);
         Ui::slantRectGrad(8.0f + dBar, 4.0f, 85.0f, 20.0f, -4.0f, 0.25f, Ui::rgba(255, 42, 133), Ui::rgba(215, 25, 105));
-        drawCenteredTextWithShadow(ctx.textBuf, 50.0f + dBar, 14.0f, 0.35f, ctx.clrWhite, "osu!3DS", 0.30f);
+        drawCenteredTextWithShadow(ctx.textBuf, 50.0f + dBar, 14.0f, 0.35f, ctx.clrWhite, "Circl3DS", 0.30f);
 
         const char* topTitle = (ctx.multiMgr.netMode == MultiNetworkMode::NET_MODE_UDS)
             ? LOC(STR_MULTI_TITLE_UDS)
-            : LOC(STR_MULTI_TITLE_LAN);
+            : ((ctx.multiMgr.netMode == MultiNetworkMode::NET_MODE_ONLINE)
+                ? LOC(STR_MULTI_TITLE_ONLINE)
+                : LOC(STR_MULTI_TITLE_LAN));
         drawTextWithShadow(ctx.textBuf, 102.0f + dBar, 9.0f, 0.40f, ctx.clrWhite, topTitle, 0.30f);
 
         char roomBadge[32];
@@ -173,6 +181,11 @@ void runMultiBrowserScreen(AppContext& ctx) {
                 drawCenteredText(ctx.textBuf, cx, 148.0f, 0.32f, ctx.clrMuted, LOC(STR_MULTI_NO_NET_REQ), 0.25f);
                 drawCenteredText(ctx.textBuf, cx, 168.0f, 0.34f, Ui::rgba(255, 209, 102), LOC(STR_MULTI_PRESS_X_CREATE), 0.25f);
                 drawCenteredText(ctx.textBuf, cx, 186.0f, 0.30f, ctx.clrMuted, LOC(STR_MULTI_ANY_JOIN), 0.25f);
+            } else if (ctx.multiMgr.netMode == MultiNetworkMode::NET_MODE_ONLINE) {
+                drawCenteredText(ctx.textBuf, cx, 130.0f, 0.42f, ctx.clrWhite, LOC(STR_MULTI_SEARCHING_ONLINE), 0.25f);
+                drawCenteredText(ctx.textBuf, cx, 148.0f, 0.32f, ctx.clrMuted, ctx.settings.onlineServerHost.c_str(), 0.25f);
+                drawCenteredText(ctx.textBuf, cx, 168.0f, 0.34f, Ui::rgba(255, 209, 102), LOC(STR_MULTI_PRESS_X_CREATE), 0.25f);
+                drawCenteredText(ctx.textBuf, cx, 186.0f, 0.30f, ctx.clrMuted, LOC(STR_MULTI_ROOM_WILL_APPEAR), 0.25f);
             } else {
                 drawCenteredText(ctx.textBuf, cx, 130.0f, 0.42f, ctx.clrWhite, LOC(STR_MULTI_SEARCH_LAN), 0.25f);
                 drawCenteredText(ctx.textBuf, cx, 148.0f, 0.32f, ctx.clrMuted, LOC(STR_MULTI_NO_ACTIVE_ROOMS), 0.25f);
@@ -247,7 +260,7 @@ void runMultiBrowserScreen(AppContext& ctx) {
             drawText(ctx.textBuf, px + 8.0f, py + 114.0f, 0.26f, ctx.clrMuted, truncateString(selRm.mapVersion, 17).c_str(), 0.25f);
 
             char pingStr[24];
-            std::snprintf(pingStr, sizeof(pingStr), (selRm.mode == MultiNetworkMode::NET_MODE_UDS) ? LOC(STR_MULTI_PING_UDS_FMT) : LOC(STR_MULTI_PING_LAN_FMT), selRm.pingMs);
+            std::snprintf(pingStr, sizeof(pingStr), (selRm.mode == MultiNetworkMode::NET_MODE_UDS) ? LOC(STR_MULTI_PING_UDS_FMT) : ((selRm.mode == MultiNetworkMode::NET_MODE_ONLINE) ? LOC(STR_MULTI_PING_ONLINE_FMT) : LOC(STR_MULTI_PING_LAN_FMT)), selRm.pingMs);
             drawText(ctx.textBuf, px + 8.0f, py + 134.0f, 0.27f, Ui::rgba(74, 222, 128), pingStr, 0.25f);
 
             const char* joinHint = (selRm.playerCount >= selRm.maxPlayers) ? LOC(STR_MULTI_ROOM_FULL) : LOC(STR_MULTI_TAP_ENTER);
@@ -284,13 +297,19 @@ void runMultiBrowserScreen(AppContext& ctx) {
     Ui::button(240.0f, 4.0f, 72.0f, 22.0f, 0.20f, Ui::rgba(22, 28, 48), Ui::rgba(0, 229, 255), false);
     drawCenteredTextWithShadow(ctx.textBuf, 276.0f, 15.0f, 0.30f, Ui::rgba(0, 229, 255), LOC(STR_MULTI_BADGE_REFRESH), 0.25f);
 
-    // Selector Táctil de Modo de Red
+    // Selector Táctil de Modo de Red (3 Modos: UDS, LAN, ONLINE)
     bool isUds = (ctx.multiMgr.netMode == MultiNetworkMode::NET_MODE_UDS);
-    Ui::panel(10.0f, 32.0f, 146.0f, 24.0f, 0.20f, isUds ? Ui::rgba(0, 229, 255) : Ui::rgba(20, 25, 45), isUds ? Ui::rgba(255, 255, 255) : 0);
-    drawCenteredTextWithShadow(ctx.textBuf, 83.0f, 44.0f, 0.32f, isUds ? Ui::rgba(0, 0, 0, 240) : ctx.clrWhite, LOC(STR_MULTI_TAB_UDS), 0.25f);
+    bool isLan = (ctx.multiMgr.netMode == MultiNetworkMode::NET_MODE_LAN);
+    bool isOnline = (ctx.multiMgr.netMode == MultiNetworkMode::NET_MODE_ONLINE);
 
-    Ui::panel(164.0f, 32.0f, 146.0f, 24.0f, 0.20f, !isUds ? Ui::rgba(0, 229, 255) : Ui::rgba(20, 25, 45), !isUds ? Ui::rgba(255, 255, 255) : 0);
-    drawCenteredTextWithShadow(ctx.textBuf, 237.0f, 44.0f, 0.32f, !isUds ? Ui::rgba(0, 0, 0, 240) : ctx.clrWhite, LOC(STR_MULTI_TAB_LAN), 0.25f);
+    Ui::panel(10.0f, 32.0f, 96.0f, 24.0f, 0.20f, isUds ? Ui::rgba(0, 229, 255) : Ui::rgba(20, 25, 45), isUds ? Ui::rgba(255, 255, 255) : 0);
+    drawCenteredTextWithShadow(ctx.textBuf, 58.0f, 44.0f, 0.30f, isUds ? Ui::rgba(0, 0, 0, 240) : ctx.clrWhite, "UDS Local", 0.25f);
+
+    Ui::panel(112.0f, 32.0f, 96.0f, 24.0f, 0.20f, isLan ? Ui::rgba(0, 229, 255) : Ui::rgba(20, 25, 45), isLan ? Ui::rgba(255, 255, 255) : 0);
+    drawCenteredTextWithShadow(ctx.textBuf, 160.0f, 44.0f, 0.30f, isLan ? Ui::rgba(0, 0, 0, 240) : ctx.clrWhite, "Wi-Fi LAN", 0.25f);
+
+    Ui::panel(214.0f, 32.0f, 96.0f, 24.0f, 0.20f, isOnline ? Ui::rgba(0, 229, 255) : Ui::rgba(20, 25, 45), isOnline ? Ui::rgba(255, 255, 255) : 0);
+    drawCenteredTextWithShadow(ctx.textBuf, 262.0f, 44.0f, 0.30f, isOnline ? Ui::rgba(0, 0, 0, 240) : ctx.clrWhite, "Online Relay", 0.25f);
 
     // Lista táctil de salas encontradas
     if (ctx.multiMgr.discoveredRooms.empty()) {

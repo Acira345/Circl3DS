@@ -47,7 +47,7 @@ void runMultiSyncScreen(AppContext& ctx) {
 
         std::string osuFileToLoad = ctx.findLocalMapFile(ctx.multiMgr.activeBeatmap.folderPath, ctx.multiMgr.activeBeatmap.osuFilename);
         if (osuFileToLoad.empty()) {
-            osuFileToLoad = "sdmc:/3ds/osu-3ds/songs/" + ctx.multiMgr.activeBeatmap.folderPath + "/" + ctx.multiMgr.activeBeatmap.osuFilename;
+            osuFileToLoad = "sdmc:/3ds/circl3ds/songs/" + ctx.multiMgr.activeBeatmap.folderPath + "/" + ctx.multiMgr.activeBeatmap.osuFilename;
         }
 
         if (ctx.beatmap.loadFromFile(osuFileToLoad, false)) {
@@ -220,7 +220,7 @@ void runMultiSyncScreen(AppContext& ctx) {
 
         // Cabecera lazer
         Ui::slantRectGrad(8.0f + dPan, 4.0f, 85.0f, 20.0f, -4.0f, 0.20f, Ui::rgba(255, 42, 133), Ui::rgba(215, 25, 105));
-        drawCenteredTextWithShadow(ctx.textBuf, 50.0f + dPan, 14.0f, 0.35f, ctx.clrWhite, "osu!3DS", 0.22f);
+        drawCenteredTextWithShadow(ctx.textBuf, 50.0f + dPan, 14.0f, 0.35f, ctx.clrWhite, "Circl3DS", 0.22f);
         drawTextWithShadow(ctx.textBuf, 102.0f + dPan, 8.0f, 0.40f, Ui::rgba(0, 229, 255), LOC(STR_MULTI_SYNC_TITLE), 0.22f);
 
         char syncHeader[48];

@@ -13,6 +13,7 @@
 #include "MultiSyncScreen.hpp"
 #include "GameplayScreen.hpp"
 #include "SplashScreen.hpp"
+#include "ProfileScreen.hpp"
 
 // Aumentar pila del hilo principal en la 3DS a 256 KB (por defecto libctru asigna solo 32 KB)
 extern "C" {
@@ -69,6 +70,9 @@ int main(int argc, char* argv[]) {
                 break;
             case STATE_PLAYING:
                 runGameplayScreen(ctx);
+                break;
+            case STATE_PROFILE:
+                runProfileScreen(ctx);
                 break;
         }
 

@@ -845,7 +845,12 @@ struct Beatmap {
                 if (sep != std::string::npos) {
                     std::string key = trim(line.substr(0, sep));
                     std::string val = trim(line.substr(sep + 1));
-                    if (key == "AudioFilename")  audioFilename = val;
+                    if (key == "AudioFilename") {
+                        if (val.size() >= 2 && val.front() == '"' && val.back() == '"') {
+                            val = trim(val.substr(1, val.size() - 2));
+                        }
+                        audioFilename = val;
+                    }
                     else if (key == "AudioLeadIn")   audioLeadIn = std::atoi(val.c_str());
                     else if (key == "PreviewTime")   previewTime = std::atoi(val.c_str());
                     else if (key == "StackLeniency") stackLeniency = std::strtof(val.c_str(), nullptr);

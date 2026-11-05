@@ -333,7 +333,7 @@ void runMultiLobbyScreen(AppContext& ctx) {
 
         // Insignia rosa osu!3DS
         Ui::slantRectGrad(8.0f + dBar, 3.5f, 78.0f, 19.0f, -4.0f, 0.25f, Ui::rgba(255, 42, 133), Ui::rgba(215, 25, 105));
-        drawCenteredTextWithShadow(ctx.textBuf, 47.0f + dBar, 13.0f, 0.34f, ctx.clrWhite, "osu!3DS", 0.30f);
+        drawCenteredTextWithShadow(ctx.textBuf, 47.0f + dBar, 13.0f, 0.34f, ctx.clrWhite, "Circl3DS", 0.30f);
 
         drawTextWithShadow(ctx.textBuf, 94.0f + dBar, 6.0f, 0.38f, ctx.clrWhite, LOC(STR_MULTI_LOBBY_TITLE), 0.30f);
 

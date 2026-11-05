@@ -1,6 +1,9 @@
 #include "ResultsScreen.hpp"
 
 void runResultsScreen(AppContext& ctx) {
+    // Mantener la música de la canción reproduciéndose suavemente si continúa en su outro (estilo osu! PC)
+    ctx.audio.update();
+
     if (ctx.multiMgr.inMultiplayer) {
         ctx.appState = STATE_MULTI_RESULTS;
         return;
@@ -153,19 +156,21 @@ void runResultsScreen(AppContext& ctx) {
     u32 lazerPink = Ui::rgba(255, 102, 171); // #FF66AB
     u32 lazerCyan = Ui::rgba(56, 210, 255);  // #38D2FF
     u32 lazerGold = Ui::rgba(255, 205, 55);  // #FFCD37
+    u32 lazerSilver = Ui::rgba(220, 230, 245);
     u32 lazerRed  = Ui::rgba(255, 77, 109);  // #FF4D6D
 
     const char* grade = "D";
     u32 gradeClr = lazerRed;
+    bool isSilverMod = (ctx.settings.activeMods & (MOD_HD | MOD_FL)) != 0;
     if (ctx.stageFailed) {
         grade = "F";
         gradeClr = lazerRed;
     } else if (acc >= 99.9f && ctx.countMiss == 0) {
-        grade = "SS";
-        gradeClr = lazerPink;
+        grade = isSilverMod ? "SSH" : "SS";
+        gradeClr = isSilverMod ? lazerSilver : lazerPink;
     } else if (acc >= 93.0f && ctx.countMiss == 0) {
-        grade = "S";
-        gradeClr = lazerGold;
+        grade = isSilverMod ? "SH" : "S";
+        gradeClr = isSilverMod ? lazerSilver : lazerGold;
     } else if (acc >= 85.0f) {
         grade = "A";
         gradeClr = Ui::rgba(46, 213, 115);
@@ -349,6 +354,10 @@ void runResultsScreen(AppContext& ctx) {
             drawKeyBadge(ctx.textBuf, 142.0f, footY + 4.0f, "X", resultsBottomTab == 0 ? LOC(STR_RESULTS_VIEW_RECORDS) : LOC(STR_RESULTS_VIEW_GRAPH), lazerGold);
         }
         drawKeyBadge(ctx.textBuf, 272.0f, footY + 4.0f, "B", LOC(STR_RESULTS_NEXT_SONGS), lazerPink);
+
+        if (ctx.settings.showFps) {
+            Ui::drawFpsCounter(400.0f, 240.0f, ctx.currentFps, ctx.currentFrameMs, ctx.textBuf, eyeSign * ctx.slider3D * 2.0f);
+        }
 
         Ui::drawTransition(400.0f, 240.0f, ctx.screenFade, gradeClr);
     }

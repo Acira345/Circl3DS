@@ -74,8 +74,12 @@ struct GameSettings {
     bool showHit300     = true; // Mostrar efecto visual / texto flotante de 300 al golpear
     bool beatmapHitsounds = true; // Hitsounds propios de la carpeta del beatmap (si existen)
     bool showPlayfieldBorder = false; // Cuadro / Marco blanco del playfield (Safe Area)
+    bool showFps        = true; // Mostrar contador de FPS y ms al estilo osu!
     int taikoBgMode = 0; // 0: Festivo (Arcade / Bailarines), 1: Imagen Beatmap, 2: Video Beatmap
     int multiDlOption = 1; // 0: Solo Nivel (.osu + Audio), 1: Nivel + Fondo (Recomendado)
+    // Multijugador Online Relay Server
+    std::string onlineServerHost = "127.0.0.1";
+    uint16_t onlineServerPort    = 34567;
     uint32_t activeMods = 0;
     int language = -1; // -1: autodetect from 3DS system, 0: ES, 1: EN, 2: RU, 3: PL
 
@@ -241,10 +245,10 @@ struct GameSettings {
 
     const char* getGameModeName() const {
         switch (gameMode) {
-            case MODE_TAIKO: return "osu!taiko";
-            case MODE_CATCH: return "osu!catch";
-            case MODE_MANIA: return "osu!mania";
-            default:         return "osu! (Standard)";
+            case MODE_TAIKO: return "Taiko";
+            case MODE_CATCH: return "Catch";
+            case MODE_MANIA: return "Mania";
+            default:         return "Standard";
         }
     }
 
@@ -398,8 +402,13 @@ struct GameSettings {
         }
     }
 
-    bool load(const std::string& path = "sdmc:/3ds/osu-3ds/settings.cfg") {
-        std::ifstream f(path.c_str());
+    bool load(const std::string& path = "sdmc:/3ds/circl3ds/settings.cfg") {
+        std::string actualPath = path;
+        std::ifstream f(actualPath.c_str());
+        if (!f.is_open()) {
+            actualPath = "sdmc:/3ds/osu-3ds/settings.cfg";
+            f.open(actualPath.c_str());
+        }
         if (!f.is_open()) {
             clampValues();
             return false;
@@ -430,8 +439,11 @@ struct GameSettings {
             else if (key == "showHit300")         showHit300         = (std::atoi(val.c_str()) != 0);
             else if (key == "beatmapHitsounds")   beatmapHitsounds   = (std::atoi(val.c_str()) != 0);
             else if (key == "showPlayfieldBorder") showPlayfieldBorder = (std::atoi(val.c_str()) != 0);
+            else if (key == "showFps")            showFps            = (std::atoi(val.c_str()) != 0);
             else if (key == "taikoBgMode")        taikoBgMode        = std::atoi(val.c_str());
             else if (key == "multiDlOption")      multiDlOption      = std::atoi(val.c_str());
+            else if (key == "onlineServerHost") onlineServerHost   = val;
+            else if (key == "onlineServerPort") onlineServerPort   = static_cast<uint16_t>(std::atoi(val.c_str()));
             else if (key == "language")           language           = std::atoi(val.c_str());
             else if (key == "activeMods")         activeMods         = static_cast<uint32_t>(std::strtoul(val.c_str(), nullptr, 10));
             else if (key == "gameMode")           gameMode           = std::atoi(val.c_str());
@@ -459,11 +471,11 @@ struct GameSettings {
         return true;
     }
 
-    bool save(const std::string& path = "sdmc:/3ds/osu-3ds/settings.cfg") {
+    bool save(const std::string& path = "sdmc:/3ds/circl3ds/settings.cfg") {
         clampValues();
         keyTaikoDon = keyTaikoDonLeft | keyTaikoDonRight;
         keyTaikoKatsu = keyTaikoKatsuLeft | keyTaikoKatsuRight;
-        OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/osu-3ds");
+        OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/circl3ds");
         std::ofstream f(path.c_str(), std::ios::trunc);
         if (!f.is_open()) return false;
 
@@ -485,8 +497,11 @@ struct GameSettings {
         f << "showHit300="         << (showHit300 ? 1 : 0) << "\n";
         f << "beatmapHitsounds="   << (beatmapHitsounds ? 1 : 0) << "\n";
         f << "showPlayfieldBorder="<< (showPlayfieldBorder ? 1 : 0) << "\n";
+        f << "showFps="            << (showFps ? 1 : 0) << "\n";
         f << "taikoBgMode="        << taikoBgMode << "\n";
         f << "multiDlOption="      << multiDlOption << "\n";
+        f << "onlineServerHost="  << onlineServerHost << "\n";
+        f << "onlineServerPort="  << onlineServerPort << "\n";
         f << "language="           << language << "\n";
         f << "activeMods="         << activeMods << "\n";
         f << "gameMode="           << gameMode << "\n";

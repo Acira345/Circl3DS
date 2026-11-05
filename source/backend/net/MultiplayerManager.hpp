@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -24,14 +25,14 @@ static constexpr int MULTI_MAX_PLAYERS = 4;
 static constexpr int MULTI_MAX_QUEUE   = 4; // Optimizado a 4 para garantizar que todo paquete quepa en un frame UDS (<= 1478 bytes)
 static constexpr uint16_t MULTI_UDP_PORT = 34567;
 static constexpr uint16_t MULTI_TCP_PORT = 34568;
-static constexpr uint32_t MULTI_MAGIC_UDP = 0x4F535533; // "OSU3"
-static constexpr uint32_t MULTI_MAGIC_TCP = 0x4F535544; // "OSUD"
+static constexpr uint32_t MULTI_MAGIC_UDP = 0x43334453; // "C3DS"
+static constexpr uint32_t MULTI_MAGIC_TCP = 0x43334454; // "C3DT"
 
 // Constantes exclusivas de UDS (Local Wireless 3DS)
-static constexpr u32 UDS_APP_WLANCOMMID  = 0x4F535533; // Identificador de comunicación inalámbrica local osu!3DS
+static constexpr u32 UDS_APP_WLANCOMMID  = 0x43334453; // 'C3DS'
 static constexpr u8  UDS_DATA_CHANNEL    = 1;          // Canal de filtrado de datos
 static constexpr u32 UDS_RECV_BUF_SIZE   = UDS_DEFAULT_RECVBUFSIZE; // 0x2E30 (~11 KB)
-static const char*   UDS_PASSPHRASE      = "osu3ds_uds";
+static const char*   UDS_PASSPHRASE      = "circl3ds_uds";
 
 // Reglas de la sala
 enum WinCondition : uint8_t {
@@ -391,6 +392,8 @@ inline std::string resolveFilePath(const std::string& folder, const std::string&
     }
 
     const char* baseSearchPaths[] = {
+        "sdmc:/3ds/circl3ds/songs/",
+        "sdmc:/circl3ds/songs/",
         "sdmc:/3ds/osu-3ds/songs/",
         "sdmc:/osu-3ds/songs/",
         "sdmc:/3ds/osu/Songs/",
@@ -415,8 +418,9 @@ inline std::string resolveFilePath(const std::string& folder, const std::string&
 // ESTRUCTURA: SALA DESCUBIERTA (BROWSER / ROOM LIST)
 // ============================================================================
 enum MultiNetworkMode : uint8_t {
-    NET_MODE_UDS = 0, // Inalámbrico 3DS (UDS nativo - Sin router, consola a consola)
-    NET_MODE_LAN = 1  // Wi-Fi Local (Sockets TCP/UDP - Misma red local / Emulador)
+    NET_MODE_UDS    = 0, // Inalámbrico 3DS (UDS nativo - Sin router, consola a consola)
+    NET_MODE_LAN    = 1, // Wi-Fi Local (Sockets TCP/UDP - Misma red local / Emulador)
+    NET_MODE_ONLINE = 2  // Online Internet (Servidor Maestro & Relay)
 };
 
 struct DiscoveredRoom {
@@ -451,8 +455,9 @@ struct DiscoveredRoom {
                    const std::string& _hname, const std::string& _mtitle,
                    const std::string& _martist, const std::string& _mver,
                    float _stars, int _count, int _maxP,
-                   WinCondition _wc, ModMode _mm, uint32_t _tick, uint16_t _ping)
-        : mode(NET_MODE_LAN), hostIp(_ip), hostPort(_port), roomTitle(_title), hostName(_hname),
+                   WinCondition _wc, ModMode _mm, uint32_t _tick, uint16_t _ping,
+                   MultiNetworkMode _mode = NET_MODE_LAN)
+        : mode(_mode), hostIp(_ip), hostPort(_port), roomTitle(_title), hostName(_hname),
           mapTitle(_mtitle), mapArtist(_martist), mapVersion(_mver),
           mapStars(_stars), playerCount(_count), maxPlayers(_maxP),
           winCondition(_wc), modMode(_mm), lastSeenTick(_tick), pingMs(_ping)
@@ -559,6 +564,22 @@ private:
     uint16_t packetSeq = 0;
     uint32_t lastBroadcastTick = 0;
     int gameplaySyncFrameCount = 0;
+    // Configuración Servidor Online
+    std::string onlineServerHost = "127.0.0.1";
+    uint16_t onlineServerPort = MULTI_UDP_PORT;
+    uint32_t resolvedOnlineIp = 0;
+    struct sockaddr_in onlineServerAddr;
+
+    uint32_t resolveHostToIp(const std::string& host) {
+        if (host.empty()) return 0;
+        in_addr_t addr = inet_addr(host.c_str());
+        if (addr != INADDR_NONE) return addr;
+        struct hostent* he = gethostbyname(host.c_str());
+        if (he && he->h_addr_list && he->h_addr_list[0]) {
+            return *reinterpret_cast<uint32_t*>(he->h_addr_list[0]);
+        }
+        return 0;
+    }
 
     static void setNonBlocking(int s) {
         int flags = fcntl(s, F_GETFL, 0);
@@ -885,9 +906,14 @@ public:
 
     bool isHost() const { return isHosting && (localSlot == hostSlot); }
 
+    void setOnlineServer(const std::string& host, uint16_t port) {
+        if (!host.empty()) onlineServerHost = host;
+        if (port != 0) onlineServerPort = port;
+    }
+
     void setNetworkMode(MultiNetworkMode mode) {
         if (netMode == mode) return;
-        if (mode == NET_MODE_LAN) {
+        if (mode == NET_MODE_LAN || mode == NET_MODE_ONLINE) {
             exitUdsService();
         }
         netMode = mode;
@@ -897,7 +923,9 @@ public:
     }
 
     void toggleNetworkMode() {
-        setNetworkMode((netMode == NET_MODE_UDS) ? NET_MODE_LAN : NET_MODE_UDS);
+        if (netMode == NET_MODE_UDS) setNetworkMode(NET_MODE_LAN);
+        else if (netMode == NET_MODE_LAN) setNetworkMode(NET_MODE_ONLINE);
+        else setNetworkMode(NET_MODE_UDS);
     }
 
     // ========================================================================
@@ -1014,11 +1042,18 @@ public:
             }
         }
 
-        if (netMode == NET_MODE_LAN) {
+        if (netMode == NET_MODE_LAN || netMode == NET_MODE_ONLINE) {
             stopUdsScanThread(false);
             if (!initSocHelper() || !setupSockets()) {
                 stop();
                 return false;
+            }
+            if (netMode == NET_MODE_ONLINE) {
+                resolvedOnlineIp = resolveHostToIp(onlineServerHost);
+                std::memset(&onlineServerAddr, 0, sizeof(onlineServerAddr));
+                onlineServerAddr.sin_family = AF_INET;
+                onlineServerAddr.sin_port = htons(onlineServerPort);
+                onlineServerAddr.sin_addr.s_addr = resolvedOnlineIp;
             }
         }
 
@@ -1164,10 +1199,17 @@ public:
             }
         }
 
-        // Si estamos en LAN o UDS falló
+        // Si estamos en LAN, ONLINE o UDS falló
         if (!initSocHelper() || !setupSockets()) {
             stop();
             return false;
+        }
+        if (netMode == NET_MODE_ONLINE) {
+            resolvedOnlineIp = resolveHostToIp(onlineServerHost);
+            std::memset(&onlineServerAddr, 0, sizeof(onlineServerAddr));
+            onlineServerAddr.sin_family = AF_INET;
+            onlineServerAddr.sin_port = htons(onlineServerPort);
+            onlineServerAddr.sin_addr.s_addr = resolvedOnlineIp;
         }
 
         broadcastLobbyState();
@@ -1233,11 +1275,17 @@ public:
             return true;
         }
 
-        // Modo LAN
-        netMode = NET_MODE_LAN;
+        // Modo LAN u ONLINE
         if (!initSocHelper() || !setupSockets()) {
             stop();
             return false;
+        }
+        if (netMode == NET_MODE_ONLINE) {
+            resolvedOnlineIp = resolveHostToIp(onlineServerHost);
+            std::memset(&onlineServerAddr, 0, sizeof(onlineServerAddr));
+            onlineServerAddr.sin_family = AF_INET;
+            onlineServerAddr.sin_port = htons(onlineServerPort);
+            onlineServerAddr.sin_addr.s_addr = resolvedOnlineIp;
         }
 
         players[localSlot].ip = gethostid();
@@ -1375,6 +1423,12 @@ public:
             return;
         }
         if (udpSock < 0) return;
+        if (netMode == NET_MODE_ONLINE) {
+            if (resolvedOnlineIp != 0) {
+                sendto(udpSock, data, len, 0, reinterpret_cast<struct sockaddr*>(&onlineServerAddr), sizeof(onlineServerAddr));
+            }
+            return;
+        }
         if (connectedHostIp != 0) {
             struct sockaddr_in hostAddr;
             std::memset(&hostAddr, 0, sizeof(hostAddr));
@@ -1393,6 +1447,12 @@ public:
             return;
         }
         if (udpSock < 0) return;
+        if (netMode == NET_MODE_ONLINE) {
+            if (resolvedOnlineIp != 0) {
+                sendto(udpSock, data, len, 0, reinterpret_cast<struct sockaddr*>(&onlineServerAddr), sizeof(onlineServerAddr));
+            }
+            return;
+        }
         sendto(udpSock, data, len, 0, reinterpret_cast<struct sockaddr*>(&bcastAddr), sizeof(bcastAddr));
         for (int i = 1; i < MULTI_MAX_PLAYERS; ++i) {
             if (players[i].active && players[i].ip != 0) {
@@ -1414,6 +1474,12 @@ public:
         hdr.type = PKT_DISCOVER_PING;
         hdr.senderSlot = isBrowserQuery ? 0xFF : static_cast<uint8_t>(localSlot);
         hdr.seq = ++packetSeq;
+        if (netMode == NET_MODE_ONLINE) {
+            if (resolvedOnlineIp != 0) {
+                sendto(udpSock, &hdr, sizeof(hdr), 0, reinterpret_cast<struct sockaddr*>(&onlineServerAddr), sizeof(onlineServerAddr));
+            }
+            return;
+        }
         if (!isBrowserQuery && connectedHostIp != 0) {
             sendPacketToHost(&hdr, sizeof(hdr));
         } else {
@@ -1850,7 +1916,7 @@ private:
         if (!udsInitialized || players[localSlot].status != STATUS_DOWNLOADING) return;
 
         std::string folder = extractFolderName(fh->folderName);
-        std::string targetDir = "sdmc:/3ds/osu-3ds/songs/" + folder + "/";
+        std::string targetDir = "sdmc:/3ds/circl3ds/songs/" + folder + "/";
         OszExtractor::ensureDirectoryRecursive(targetDir);
 
         std::string osuFile = extractBaseFilename(fh->osuFileName);
@@ -1975,7 +2041,7 @@ private:
                 if (dlBytesReceived >= sizeof(currentDlHeader)) {
                     if (currentDlHeader.magic == MULTI_MAGIC_TCP && currentDlHeader.totalBytes > 0) {
                         std::string folder = extractFolderName(currentDlHeader.folderName);
-                        std::string targetDir = "sdmc:/3ds/osu-3ds/songs/" + folder + "/";
+                        std::string targetDir = "sdmc:/3ds/circl3ds/songs/" + folder + "/";
                         OszExtractor::ensureDirectoryRecursive(targetDir);
 
                         std::string osuFile = extractBaseFilename(currentDlHeader.osuFileName);
@@ -2190,8 +2256,9 @@ private:
                 }
 
                 bool found = false;
+                MultiNetworkMode curRoomMode = (netMode == NET_MODE_ONLINE) ? NET_MODE_ONLINE : NET_MODE_LAN;
                 for (size_t i = 0; i < discoveredRooms.size(); ++i) {
-                    if (discoveredRooms[i].mode == NET_MODE_LAN && discoveredRooms[i].hostIp == fromIp) {
+                    if (discoveredRooms[i].mode == curRoomMode && discoveredRooms[i].hostIp == fromIp) {
                         discoveredRooms[i].roomTitle = st->roomTitle;
                         discoveredRooms[i].hostName = hName;
                         discoveredRooms[i].mapTitle = st->mapTitle;
@@ -2214,7 +2281,8 @@ private:
                         st->mapStars, count, MULTI_MAX_PLAYERS,
                         static_cast<WinCondition>(st->winCondition),
                         static_cast<ModMode>(st->modMode),
-                        now, st->slots[st->hostSlot].pingMs
+                        now, st->slots[st->hostSlot].pingMs,
+                        curRoomMode
                     ));
                 }
             }
@@ -2345,8 +2413,8 @@ public:
                 }
             }
         }
-        // 2. Procesamiento de paquetes LAN (Sockets UDP/TCP)
-        else if (netMode == NET_MODE_LAN && udpSock >= 0) {
+        // 2. Procesamiento de paquetes LAN y ONLINE (Sockets UDP/TCP)
+        else if ((netMode == NET_MODE_LAN || netMode == NET_MODE_ONLINE) && udpSock >= 0) {
             uint8_t recvBuf[2048];
             struct sockaddr_in fromAddr;
             socklen_t fromLen = sizeof(fromAddr);

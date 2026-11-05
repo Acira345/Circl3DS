@@ -23,7 +23,8 @@ def get_local_ip():
     return ip
 
 local_ip = get_local_ip()
-download_url = f"http://{local_ip}:{PORT}/osu-3ds.3dsx"
+file_3dsx = "circl3ds.3dsx" if os.path.exists("circl3ds.3dsx") else "osu-3ds.3dsx"
+download_url = f"http://{local_ip}:{PORT}/{file_3dsx}"
 
 # 2. Iniciar el servidor HTTP en segundo plano
 handler = http.server.SimpleHTTPRequestHandler

@@ -32,8 +32,9 @@ void renderPlayfieldObjects(
     for (size_t i = 0; i + 1 < ctx.beatmap.circles.size(); ++i) {
     const auto& a = ctx.beatmap.circles[i];
     const auto& b = ctx.beatmap.circles[i + 1];
+    if (b.time - preempt > songTime) break;
     if (a.isSpinner || b.isSpinner || b.comboNumber == 1) continue;
-    if (songTime < b.time - preempt || songTime > b.time) continue;
+    if (songTime > b.time) continue;
 
     Vec2 startPos = a.getEndPosition();
     float x0 = playX(startPos.x, dPlayfield);
@@ -55,10 +56,13 @@ void renderPlayfieldObjects(
     }
 }
 
-std::vector<int> visibleIndices;
-visibleIndices.reserve(24);
+static std::vector<int> visibleIndices;
+visibleIndices.clear();
+if (visibleIndices.capacity() < 32) visibleIndices.reserve(32);
+float maxPreempt = std::max(preempt, 400.0f);
 for (int i = 0; i < static_cast<int>(ctx.beatmap.circles.size()); ++i) {
     const auto& obj = ctx.beatmap.circles[i];
+    if (obj.time - maxPreempt > songTime) break;
     bool visible = false;
     if (obj.isSpinner) {
         visible = (songTime >= (obj.time - 400) && !obj.sliderDone);
@@ -267,14 +271,15 @@ for (int v = numVisible - 1; v >= 0; --v) {
             }
         }
 
-        // Construir la lista de puntos visibles recortada entre startFrac y endFrac
-        std::vector<Vec2> visiblePath;
+        // Construir la lista de puntos visibles recortada entre startFrac y endFrac (reutilizando memoria estática)
+        static std::vector<Vec2> visiblePath;
+        visiblePath.clear();
         if (endFrac - startFrac <= 0.005f || fullPtsCount < 2) {
-            visiblePath.clear();
+            // vacío
         } else if (startFrac <= 0.001f && endFrac >= 0.999f) {
-            visiblePath = obj.sliderPath;
+            visiblePath.assign(obj.sliderPath.begin(), obj.sliderPath.end());
         } else {
-            visiblePath.reserve(fullPtsCount + 2);
+            if (visiblePath.capacity() < fullPtsCount + 2) visiblePath.reserve(fullPtsCount + 2);
             float startIdxFloat = startFrac * static_cast<float>(fullPtsCount - 1);
             float endIdxFloat   = endFrac   * static_cast<float>(fullPtsCount - 1);
 
@@ -305,8 +310,10 @@ for (int v = numVisible - 1; v >= 0; --v) {
 
         if (visiblePath.size() >= 2) {
             size_t nPts = visiblePath.size();
-            std::vector<Vec2> pts(nPts);
-            std::vector<Vec2> nrm(nPts);
+            static std::vector<Vec2> pts;
+            static std::vector<Vec2> nrm;
+            pts.resize(nPts);
+            nrm.resize(nPts);
             for (size_t p = 0; p < nPts; ++p) {
                 pts[p] = Vec2(playX(visiblePath[p].x, dSlider), playY(visiblePath[p].y));
             }
@@ -345,7 +352,8 @@ for (int v = numVisible - 1; v >= 0; --v) {
             struct SliderVtx {
                 Vec2 Lo, Li, C, Ri, Ro;
             };
-            std::vector<SliderVtx> vSet(nPts);
+            static std::vector<SliderVtx> vSet;
+            vSet.resize(nPts);
             for (size_t p = 0; p < nPts; ++p) {
                 vSet[p].C  = pts[p];
                 vSet[p].Li = Vec2(pts[p].x + nrm[p].x * rInner, pts[p].y + nrm[p].y * rInner);
@@ -726,7 +734,7 @@ void renderBottomTablet(AppContext& ctx) {
     float mR = 22.0f + pulse * 3.0f;
     Ui::ring(ctx.settings.tabletCenterX, ctx.settings.tabletCenterY, 0.13f, mR, 1.5f, Ui::rgba(255, 102, 171, 55), 28);
     drawCenteredText(ctx.textBuf, ctx.settings.tabletCenterX, ctx.settings.tabletCenterY - 1.0f,
-                     0.48f, Ui::rgba(255, 102, 171, 55), "osu!", 0.14f);
+                     0.38f, Ui::rgba(255, 102, 171, 55), "Circl", 0.14f);
 
     if (ctx.kiaiGlow > 0.01f) {
         u8 tAlpha = static_cast<u8>(ctx.kiaiGlow * (55.0f + 110.0f * pulse));

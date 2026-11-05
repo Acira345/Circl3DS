@@ -29,7 +29,7 @@ static bool readString(std::ifstream& f, std::string& str) {
 }
 
 bool ReplayData::saveToFile(const std::string& path) const {
-    OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/osu-3ds/replays");
+    OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/circl3ds/replays");
     std::ofstream f(path.c_str(), std::ios::binary | std::ios::trunc);
     if (!f.is_open()) return false;
 
@@ -163,13 +163,25 @@ static std::string getSafeKey(const std::string& osuPath) {
 }
 
 void init() {
-    OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/osu-3ds/replays");
+    OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/circl3ds/replays");
 }
 
 std::string getTopReplayPath(const std::string& osuPath, int mode, int rank) {
     std::string safeKey = getSafeKey(osuPath);
     char buf[256];
-    std::snprintf(buf, sizeof(buf), "sdmc:/3ds/osu-3ds/replays/top_%s_m%d_r%d.osr3d", safeKey.c_str(), mode, rank);
+    std::snprintf(buf, sizeof(buf), "sdmc:/3ds/circl3ds/replays/top_%s_m%d_r%d.osr3d", safeKey.c_str(), mode, rank);
+    FILE* test = std::fopen(buf, "rb");
+    if (test) {
+        std::fclose(test);
+    } else {
+        char fallback[256];
+        std::snprintf(fallback, sizeof(fallback), "sdmc:/3ds/osu-3ds/replays/top_%s_m%d_r%d.osr3d", safeKey.c_str(), mode, rank);
+        FILE* fb = std::fopen(fallback, "rb");
+        if (fb) {
+            std::fclose(fb);
+            return std::string(fallback);
+        }
+    }
     return std::string(buf);
 }
 
@@ -226,7 +238,7 @@ std::string exportReplay(const ReplayData& replay, std::string* outError) {
     std::snprintf(filename, sizeof(filename), "%s - %s [%s] (%d) - %s.osr3d",
                   art.c_str(), tit.c_str(), diff.c_str(), replay.score, pName.c_str());
 
-    std::string fullPath = "sdmc:/3ds/osu-3ds/replays/" + std::string(filename);
+    std::string fullPath = "sdmc:/3ds/circl3ds/replays/" + std::string(filename);
     if (!replay.saveToFile(fullPath)) {
         if (outError) *outError = "Error al escribir en la tarjeta SD.";
         return "";

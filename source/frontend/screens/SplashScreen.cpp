@@ -115,8 +115,8 @@ void drawOsuSplashMedallion(C2D_TextBuf textBuf, float cx, float cy, float radiu
     // Reflejo superior estilo cristal
     C2D_DrawCircleSolid(cx - radius * 0.18f, cy - radius * 0.22f, 0.31f, radius * 0.48f, Ui::rgba(255, 255, 255, 26));
 
-    // Texto central "osu!"
-    drawCenteredTextWithShadow(textBuf, cx, cy - 2.0f, textScale, whiteClr, "osu!", 0.35f, Ui::rgba(0, 0, 0, 160));
+    // Texto central "Circl"
+    drawCenteredTextWithShadow(textBuf, cx, cy - 2.0f, textScale, whiteClr, "Circl", 0.35f, Ui::rgba(0, 0, 0, 160));
 }
 
 } // namespace
@@ -124,6 +124,7 @@ void drawOsuSplashMedallion(C2D_TextBuf textBuf, float cx, float cy, float radiu
 void runSplashScreen(AppContext& ctx) {
     SplashWorkerContext workerData;
     workerData.ctx = &ctx;
+    std::snprintf(workerData.statusMsg, sizeof(workerData.statusMsg), "%s", LOC(STR_SPLASH_INIT));
     LightLock_Init(&workerData.lock);
 
     // Determinar consola y crear hilo secundario
@@ -192,7 +193,7 @@ void runSplashScreen(AppContext& ctx) {
         }
 
         if (startingFade) {
-            fadeOut += 0.07f;
+            fadeOut += 0.16f;
             if (fadeOut >= 1.0f) {
                 fadeOut = 1.0f;
                 break;
@@ -241,11 +242,11 @@ void runSplashScreen(AppContext& ctx) {
             // Galleta / Medallón de osu! pulsando
             drawOsuSplashMedallion(ctx.textBuf, medallionX, medallionY, medallionRadius, beat, tick, 0.88f);
 
-            // Título "osu! 3DS"
-            drawCenteredTextWithShadow(ctx.textBuf, medallionX, 172.0f, 0.52f, ctx.clrWhite, "osu! 3DS", 0.40f, Ui::rgba(0, 0, 0, 180));
+            // Título "Circl3DS"
+            drawCenteredTextWithShadow(ctx.textBuf, medallionX, 172.0f, 0.52f, ctx.clrWhite, "Circl3DS", 0.40f, Ui::rgba(0, 0, 0, 180));
 
             // Subtítulo
-            drawCenteredTextWithShadow(ctx.textBuf, medallionX, 198.0f, 0.34f, clrMutedTxt, "Rhythm is just a click away!", 0.40f, Ui::rgba(0, 0, 0, 150));
+            drawCenteredTextWithShadow(ctx.textBuf, medallionX, 198.0f, 0.34f, clrMutedTxt, "Rhythm is just a tap away!", 0.40f, Ui::rgba(0, 0, 0, 150));
 
             // Efecto de desvanecimiento de salida (fade out a negro)
             if (fadeOut > 0.0f) {
@@ -284,9 +285,9 @@ void runSplashScreen(AppContext& ctx) {
         // Contador de canciones en vivo
         char countStr[64];
         if (currentFound > 0) {
-            std::snprintf(countStr, sizeof(countStr), "%d canciones listas", currentFound);
+            std::snprintf(countStr, sizeof(countStr), LOC(STR_SPLASH_SONGS_READY_FMT), currentFound);
         } else {
-            std::snprintf(countStr, sizeof(countStr), "Iniciando biblioteca...");
+            std::snprintf(countStr, sizeof(countStr), "%s", LOC(STR_SPLASH_INIT_LIB));
         }
         drawCenteredTextWithShadow(ctx.textBuf, 160.0f, 168.0f, 0.33f, clrMutedTxt, countStr, 0.35f, Ui::rgba(0, 0, 0, 140));
 
@@ -329,7 +330,20 @@ void runSplashScreen(AppContext& ctx) {
         scanThread = nullptr;
     }
 
-    // Al concluir la carga, arrancar la música de bienvenida
+    // Al concluir la carga, preseleccionar una canción inicial y precargar su imagen de fondo
+    if (!ctx.songMgr.sets.empty()) {
+        ctx.selectedSet = std::rand() % static_cast<int>(ctx.songMgr.sets.size());
+        ctx.selectedDiff = 0;
+        ctx.carouselPos = static_cast<float>(ctx.selectedSet);
+        const auto& initSet = ctx.songMgr.sets[ctx.selectedSet];
+        std::string initBg = (!initSet.difficulties.empty() && !initSet.difficulties[0].backgroundPath.empty())
+                           ? initSet.difficulties[0].backgroundPath : initSet.backgroundPath;
+        if (!initBg.empty()) {
+            ctx.bgLoader.request(initBg, ctx.bgMaxW, ctx.bgMaxH);
+        }
+    }
+
+    // Arrancar la música de bienvenida o la vista previa de la canción inicial
     std::string themePath = "romfs:/circles.mp3";
     bool themeStarted = false;
     FILE* fTheme = std::fopen(themePath.c_str(), "rb");
@@ -338,15 +352,10 @@ void runSplashScreen(AppContext& ctx) {
         themeStarted = ctx.audio.startMusic(themePath, 0, 1.0f, 0);
         if (themeStarted) {
             ctx.audio.setLoop(false);
-            ctx.bgLoader.cancel();
-            ctx.bgTex.unload();
         }
     }
 
     if (!themeStarted && !ctx.songMgr.sets.empty()) {
-        ctx.selectedSet = std::rand() % static_cast<int>(ctx.songMgr.sets.size());
-        ctx.selectedDiff = 0;
-        ctx.carouselPos = static_cast<float>(ctx.selectedSet);
         ctx.updateSongPreview();
     }
 

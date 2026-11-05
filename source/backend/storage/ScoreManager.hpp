@@ -136,9 +136,15 @@ public:
         return Beatmap::toLower(base);
     }
 
-    void load(const std::string& path = "sdmc:/3ds/osu-3ds/scores.cfg") {
+    void load(const std::string& path = "sdmc:/3ds/circl3ds/scores.cfg") {
         records.clear();
-        std::ifstream f(path.c_str());
+        std::string actualPath = path;
+        std::ifstream f(actualPath.c_str());
+        if (!f.is_open()) {
+            actualPath = "sdmc:/3ds/osu-3ds/scores.cfg";
+            f.open(actualPath.c_str());
+        }
+
         if (!f.is_open()) return;
 
         std::string line;
@@ -161,8 +167,8 @@ public:
         }
     }
 
-    void save(const std::string& path = "sdmc:/3ds/osu-3ds/scores.cfg") const {
-        OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/osu-3ds");
+    void save(const std::string& path = "sdmc:/3ds/circl3ds/scores.cfg") const {
+        OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/circl3ds");
         std::ofstream f(path.c_str(), std::ios::trunc);
         if (!f.is_open()) return;
 

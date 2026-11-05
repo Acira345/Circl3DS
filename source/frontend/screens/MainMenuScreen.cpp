@@ -60,8 +60,8 @@ void drawOsuMedallion(C2D_TextBuf textBuf, float cx, float cy, float radius,
     // Reflejo superior sutil estilo cristal
     C2D_DrawCircleSolid(cx - radius * 0.18f, cy - radius * 0.22f, 0.31f, radius * 0.48f, Ui::rgba(255, 255, 255, 22));
 
-    // Texto central "osu!"
-    drawCenteredTextWithShadow(textBuf, cx, cy - 2.0f, textScale, whiteClr, "osu!", 0.35f, Ui::rgba(0, 0, 0, 140));
+    // Texto central "Circl"
+    drawCenteredTextWithShadow(textBuf, cx, cy - 2.0f, textScale, whiteClr, "Circl", 0.35f, Ui::rgba(0, 0, 0, 140));
 }
 
 } // namespace
@@ -78,6 +78,16 @@ void runMainMenuScreen(AppContext& ctx) {
 
     if (ctx.kDown & KEY_START) {
         ctx.shouldQuit = true;
+        return;
+    }
+
+    // Acceso directo rápido a Perfil & StreetPass con tecla Y o SELECT
+    if (ctx.kDown & (KEY_Y | KEY_SELECT)) {
+        ctx.audio.playHitSound(2);
+        ctx.profileMgr.selectedRivalIndex = -1;
+        ctx.profileMgr.loadAvatar();
+        ctx.profileMgr.refreshStats(ctx.scoreMgr, ctx.songMgr);
+        ctx.appState = STATE_PROFILE;
         return;
     }
 
@@ -108,17 +118,17 @@ void runMainMenuScreen(AppContext& ctx) {
             }
         }
     } else {
-        // ESTADO 2 (Desplegado): Navegación por las 5 opciones inclinadas o contraer con B / círculo izquierdo
+        // ESTADO 2 (Desplegado): Navegación por las 6 opciones (5 principales + Salir)
         if (ctx.kDown & KEY_B) {
             ctx.mainMenuExpanded = false;
             ctx.audio.playHitSound(0);
         } else {
             if (ctx.kDown & KEY_DUP) {
-                ctx.mainMenuOption = (ctx.mainMenuOption + 4) % 5;
+                ctx.mainMenuOption = (ctx.mainMenuOption + 5) % 6;
                 ctx.audio.playHitSound(0);
             }
             if (ctx.kDown & KEY_DDOWN) {
-                ctx.mainMenuOption = (ctx.mainMenuOption + 1) % 5;
+                ctx.mainMenuOption = (ctx.mainMenuOption + 1) % 6;
                 ctx.audio.playHitSound(0);
             }
             if (ctx.kDown & KEY_A) {
@@ -126,24 +136,25 @@ void runMainMenuScreen(AppContext& ctx) {
             }
 
             if (ctx.touchJustDown) {
-                // Comprobar toque en el círculo ancla izquierdo (cx = 46, cy = 120, r = 38)
+                // Toque en el círculo ancla izquierdo
                 float dx = static_cast<float>(ctx.touch.px) - 46.0f;
                 float dy = static_cast<float>(ctx.touch.py) - 120.0f;
                 if (dx * dx + dy * dy <= 42.0f * 42.0f) {
                     ctx.mainMenuExpanded = false;
                     ctx.audio.playHitSound(0);
-                } else if (ctx.touch.px >= 92 && ctx.touch.px <= 314) {
-                    // Comprobar toque en los 4 botones principales + 5to botón Salir
-                    for (int i = 0; i < 4; ++i) {
-                        float by = 18.0f + i * 43.0f;
-                        if (ctx.touch.py >= by && ctx.touch.py <= by + 38.0f) {
+                } else if (ctx.touch.px >= 92 && ctx.touch.px <= 316) {
+                    // 5 botones principales (y: 12 + i * 35)
+                    for (int i = 0; i < 5; ++i) {
+                        float by = 12.0f + i * 35.0f;
+                        if (ctx.touch.py >= by && ctx.touch.py <= by + 32.0f) {
                             ctx.mainMenuOption = i;
                             activateOption = true;
                             break;
                         }
                     }
-                    if (!activateOption && ctx.touch.py >= 192 && ctx.touch.py <= 226) {
-                        ctx.mainMenuOption = 4;
+                    // 6to botón Salir (y: 190..222)
+                    if (!activateOption && ctx.touch.py >= 190 && ctx.touch.py <= 222) {
+                        ctx.mainMenuOption = 5;
                         activateOption = true;
                     }
                 }
@@ -157,19 +168,24 @@ void runMainMenuScreen(AppContext& ctx) {
             ctx.appState = STATE_SONG_SELECT;
             ctx.updateSongPreview();
         } else if (ctx.mainMenuOption == 1) {
+            ctx.profileMgr.selectedRivalIndex = -1;
+            ctx.profileMgr.loadAvatar();
+            ctx.profileMgr.refreshStats(ctx.scoreMgr, ctx.songMgr);
+            ctx.appState = STATE_PROFILE;
+        } else if (ctx.mainMenuOption == 2) {
             ctx.multiMgr.startBrowser(ctx.sysUser);
             ctx.appState = STATE_MULTI_BROWSER;
-        } else if (ctx.mainMenuOption == 2) {
+        } else if (ctx.mainMenuOption == 3) {
             ctx.audio.stopMusic();
             ctx.multiMgr.stop();
             ctx.wifiReturnState = STATE_MAIN_MENU;
             ctx.wifiServer.start();
             ctx.appState = STATE_WIFI_TRANSFER;
-        } else if (ctx.mainMenuOption == 3) {
+        } else if (ctx.mainMenuOption == 4) {
             ctx.settingsReturnState = STATE_MAIN_MENU;
             ctx.calibrationMode = false;
             ctx.appState = STATE_SETTINGS;
-        } else if (ctx.mainMenuOption == 4) {
+        } else if (ctx.mainMenuOption == 5) {
             ctx.shouldQuit = true;
             return;
         }
@@ -192,7 +208,7 @@ void runMainMenuScreen(AppContext& ctx) {
         C2D_SceneBegin(curTop);
         auto depthShift = [&](float px) { return eyeSign * ctx.slider3D * px; };
 
-        // 1. Fondo estilo osu!lazer con degradado oscuro (#140D24 -> #0A0714) y geometría flotante
+        // 1. Fondo estilo osu!lazer con degradado oscuro y geometría flotante
         float dBg = depthShift(-3.0f);
         Ui::backdrop(400.0f, 240.0f, static_cast<float>(ctx.animTick),
                      Ui::rgba(20, 13, 36), Ui::rgba(10, 7, 20), pinkAccent, 0.01f);
@@ -203,8 +219,10 @@ void runMainMenuScreen(AppContext& ctx) {
             C2D_DrawRectSolid(0.0f, 0.0f, 0.03f, 400.0f, 240.0f, Ui::rgba(14, 9, 24, 175));
         }
 
-        // 2. Cabecera superior estilo osu!lazer: [osu!] osu!lazer 3DS | ● Conectado • 60 FPS
-        Ui::lazerHeader(400.0f, 0.30f, "osu!lazer 3DS", "60 FPS", pinkAccent, ctx.textBuf, true);
+        // 2. Cabecera superior estilo osu!lazer
+        char fpsHdr[16];
+        std::snprintf(fpsHdr, sizeof(fpsHdr), "%d FPS", std::max(1, std::min(60, static_cast<int>(std::round(ctx.currentFps)))));
+        Ui::lazerHeader(400.0f, 0.30f, "Circl3DS", fpsHdr, pinkAccent, ctx.textBuf, true);
 
         // 3. Medallón central osu! pulsante en 3D
         float dLogo = depthShift(3.5f + beat * 1.2f);
@@ -216,11 +234,11 @@ void runMainMenuScreen(AppContext& ctx) {
         // 4. Lema y subtítulo inferior bajo el medallón
         float dText = depthShift(2.0f);
         drawCenteredTextWithShadow(ctx.textBuf, 200.0f + dText, 164.0f, 0.42f,
-                                   ctx.clrWhite, "Rhythm is just a click away!", 0.35f);
+                                   ctx.clrWhite, "Rhythm is just a tap away!", 0.35f);
         drawCenteredTextWithShadow(ctx.textBuf, 200.0f + dText, 181.0f, 0.34f,
                                    pinkAccent, ctx.mainMenuExpanded ? LOC(STR_MENU_PROMPT_EXPANDED) : LOC(STR_MENU_PROMPT_COLLAPSED), 0.35f);
 
-        // 5. Barra inferior de canción en reproducción (♪ Title (Artist) | 180 BPM • ★ 2.97)
+        // 5. Barra inferior de canción en reproducción
         float barY = 212.0f;
         C2D_DrawRectSolid(0.0f, barY, 0.30f, 400.0f, 28.0f, Ui::rgba(14, 10, 24, 240));
         C2D_DrawRectSolid(0.0f, barY, 0.31f, 400.0f, 1.0f, Ui::withAlpha(pinkAccent, 85));
@@ -278,13 +296,12 @@ void runMainMenuScreen(AppContext& ctx) {
     C2D_TargetClear(ctx.bottomScreen, Ui::rgba(10, 6, 20));
     C2D_SceneBegin(ctx.bottomScreen);
 
-    // Fondo oscuro limpio (#0A0614) con geometría sutil estilo osu!lazer
     Ui::backdrop(320.0f, 240.0f, static_cast<float>(ctx.animTick),
                  Ui::rgba(16, 10, 30), Ui::rgba(10, 6, 20), pinkAccent, 0.01f);
 
     float tExp = ctx.mainMenuExpandAnim;
 
-    // Interpolación suave del círculo osu! entre Estado 1 (centro) y Estado 2 (ancla izquierda)
+    // Interpolación suave del círculo osu! entre Estado 1 y Estado 2
     float botCx     = 160.0f * (1.0f - tExp) + 46.0f * tExp;
     float botCy     = 112.0f * (1.0f - tExp) + 120.0f * tExp;
     float botRadius = (54.0f + beat * 4.5f) * (1.0f - tExp) + (35.0f + beat * 2.0f) * tExp;
@@ -295,53 +312,59 @@ void runMainMenuScreen(AppContext& ctx) {
     if (tExp < 0.5f) {
         // Texto inferior del Estado 1 (Contraído)
         u8 promptAlpha = static_cast<u8>((1.0f - tExp * 2.0f) * (195.0f + beat * 60.0f));
-        drawCenteredTextWithShadow(ctx.textBuf, 160.0f, 188.0f, 0.40f,
+        drawCenteredTextWithShadow(ctx.textBuf, 160.0f, 186.0f, 0.40f,
                                    Ui::rgba(255, 255, 255, promptAlpha),
                                    LOC(STR_MENU_TAP_CIRCLE), 0.35f);
-        drawCenteredText(ctx.textBuf, 160.0f, 222.0f, 0.30f,
-                         Ui::rgba(145, 138, 175, static_cast<u8>((1.0f - tExp * 2.0f) * 180.0f)),
-                         LOC(STR_MENU_HINT_LR), 0.35f);
+        drawCenteredText(ctx.textBuf, 160.0f, 218.0f, 0.30f,
+                         Ui::rgba(255, 205, 55, static_cast<u8>((1.0f - tExp * 2.0f) * 220.0f)),
+                         LOC(STR_MENU_HINT_PROFILE), 0.35f);
     }
 
     if (tExp > 0.05f) {
-        // Estado 2 (Desplegado): Botones inclinados estilo osu!lazer a la derecha
+        // Estado 2 (Desplegado): Botones inclinados estilo osu!lazer
         float slideOffset = (1.0f - tExp) * 180.0f;
         float bx = 98.0f + slideOffset;
         float bw = 212.0f;
-        float slant = -6.0f;
+        float slant = -5.0f;
 
-        const char* btnTitles[4] = {
+        const char* btnTitles[5] = {
             LOC(STR_MENU_PLAY),
+            LOC(STR_MENU_PROFILE_TITLE),
             LOC(STR_MENU_MULTI),
             LOC(STR_MENU_WIFI),
             LOC(STR_MENU_SETTINGS)
         };
-        const char* btnSubs[4] = {
+        const char* btnSubs[5] = {
             LOC(STR_MENU_SUB_PLAY),
+            LOC(STR_MENU_PROFILE_SUB),
             LOC(STR_MENU_SUB_MULTI),
             LOC(STR_MENU_SUB_WIFI),
             LOC(STR_MENU_SUB_SETTINGS)
         };
-        u32 btnColors[4] = {
+        u32 btnColors[5] = {
             Ui::rgba(255, 102, 171), // #FF66AB Rosa osu!
+            Ui::rgba(255, 195, 45),  // #FFC32D Dorado StreetPass
             Ui::rgba(66, 144, 251),  // #4290FB Azul multijugador
             Ui::rgba(85, 221, 119),  // #55DD77 Verde descargas
             Ui::rgba(147, 85, 232)   // #9355E8 Morado ajustes
         };
 
-        for (int i = 0; i < 4; ++i) {
-            float by = 18.0f + i * 43.0f;
+        for (int i = 0; i < 5; ++i) {
+            float by = 12.0f + i * 35.0f;
             bool sel = (ctx.mainMenuOption == i);
-            Ui::slantButton(bx, by, bw, 38.0f, slant, btnColors[i],
+            Ui::slantButton(bx, by, bw, 32.0f, slant, btnColors[i],
                             btnTitles[i], btnSubs[i], ctx.textBuf, sel, 0.25f);
         }
 
-        // 5to botón compacto inclinado: SALIR
-        bool exitSel = (ctx.mainMenuOption == 4);
-        Ui::slantButton(bx, 192.0f, bw, 32.0f, slant, Ui::rgba(255, 77, 109),
+        // 6to botón compacto inclinado: SALIR
+        bool exitSel = (ctx.mainMenuOption == 5);
+        Ui::slantButton(bx, 190.0f, bw, 28.0f, slant, Ui::rgba(255, 77, 109),
                         LOC(STR_MENU_EXIT), LOC(STR_MENU_SUB_EXIT), ctx.textBuf, exitSel, 0.25f);
     }
 
+    if (ctx.settings.showFps) {
+        Ui::drawFpsCounter(320.0f, 240.0f, ctx.currentFps, ctx.currentFrameMs, ctx.textBuf);
+    }
     Ui::drawTransition(320.0f, 240.0f, ctx.screenFade, ctx.clrPrimary);
 
     C3D_FrameEnd(0);

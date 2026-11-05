@@ -4,7 +4,7 @@ param(
 )
 
 Write-Host "=========================================================" -ForegroundColor Cyan
-Write-Host "  osu! 3DS - Conversor de Videos de Fondo (256x128 15fps)" -ForegroundColor Cyan
+Write-Host "  Circl3DS - Conversor de Videos de Fondo (256x128 15fps)" -ForegroundColor Cyan
 Write-Host "=========================================================" -ForegroundColor Cyan
 
 if (-not (Get-Command "ffmpeg" -ErrorAction SilentlyContinue)) {
@@ -17,7 +17,7 @@ if (-not (Get-Command "ffmpeg" -ErrorAction SilentlyContinue)) {
 
 if (-not (Test-Path $CarpetaCanciones)) {
     Write-Host "[!] La carpeta '$CarpetaCanciones' no existe." -ForegroundColor Red
-    Write-Host "    Uso: .\convertir_videos_3ds.ps1 -CarpetaCanciones 'E:\3ds\osu-3ds\songs'" -ForegroundColor Gray
+    Write-Host "    Uso: .\convertir_videos_3ds.ps1 -CarpetaCanciones 'E:\3ds\circl3ds\songs'" -ForegroundColor Gray
     exit 1
 }
 

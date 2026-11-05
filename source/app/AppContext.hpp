@@ -33,6 +33,7 @@
 #include "AppState.hpp"
 #include "QrRenderer.hpp"
 #include "Draw.hpp"
+#include "ProfileManager.hpp"
 
 enum MultiPickerAction {
     PICKER_ACTION_ACTIVE = 0,
@@ -81,6 +82,7 @@ struct AppContext {
     AudioPlayer audio;
     WifiServer wifiServer;
     MultiplayerManager multiMgr;
+    ProfileManager profileMgr;
 
     // Estado de Multijugador
     std::string sysUser = "Player3DS";
@@ -141,6 +143,13 @@ struct AppContext {
     bool isNew3DS = false;
     int bgMaxW = 256;
     int bgMaxH = 192;
+    int loadedSkinIndex = -1;
+    bool customHitsoundsActive = false;
+
+    // Medición de FPS y tiempo de fotograma (ms) en tiempo real
+    u64 lastFrameTick = 0;
+    float currentFps = 60.0f;
+    float currentFrameMs = 16.67f;
 
     AsyncTextureLoader bgLoader;
     VideoPlayer videoPlayer;
@@ -187,6 +196,7 @@ struct AppContext {
     // Transición estilo osu!lazer y carga escalonada al iniciar una canción
     bool inSongIntro = false;
     int songIntroTick = 0;
+    int songOutroTick = 0;
     int songIntroLoadStage = 0;
     int songIntroLeadInMs = 1500;
     std::string songIntroOsuPath = "";

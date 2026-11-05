@@ -165,7 +165,7 @@ private:
         while (!baseName.empty() && (baseName.back() == ' ' || baseName.back() == '.')) {
             baseName.pop_back();
         }
-        std::string targetDir = isSkin ? "sdmc:/3ds/osu-3ds/skins/" : "sdmc:/3ds/osu-3ds/songs/";
+        std::string targetDir = isSkin ? "sdmc:/3ds/circl3ds/skins/" : "sdmc:/3ds/circl3ds/songs/";
 
         // 1. Verificación por carpeta exacta descomprimida y válida
         std::string exactFolder = targetDir + baseName;
@@ -203,14 +203,15 @@ private:
     static std::string getInstalledJson() {
         std::string json = "{\"sets\":[";
         bool first = true;
-        DIR* dir = opendir("sdmc:/3ds/osu-3ds/songs/");
+        DIR* dir = opendir("sdmc:/3ds/circl3ds/songs/");
+        if (!dir) dir = opendir("sdmc:/3ds/osu-3ds/songs/");
         if (dir) {
             struct dirent* entry;
             while ((entry = readdir(dir)) != nullptr) {
                 if (entry->d_name[0] == '.') continue;
                 std::string dname = entry->d_name;
                 // Ignorar archivos sueltos (.osz) o carpetas vacías/incompletas
-                if (!isValidInstalledFolder("sdmc:/3ds/osu-3ds/songs/" + dname, false)) continue;
+                if (!isValidInstalledFolder("sdmc:/3ds/circl3ds/songs/" + dname, false) && !isValidInstalledFolder("sdmc:/3ds/osu-3ds/songs/" + dname, false)) continue;
                 if (!first) json += ",";
                 first = false;
                 json += "\"";
@@ -229,13 +230,14 @@ private:
         }
         json += "],\"skins\":[";
         first = true;
-        DIR* skinDir = opendir("sdmc:/3ds/osu-3ds/skins/");
+        DIR* skinDir = opendir("sdmc:/3ds/circl3ds/skins/");
+        if (!skinDir) skinDir = opendir("sdmc:/3ds/osu-3ds/skins/");
         if (skinDir) {
             struct dirent* entry;
             while ((entry = readdir(skinDir)) != nullptr) {
                 if (entry->d_name[0] == '.') continue;
                 std::string sname = entry->d_name;
-                if (!isValidInstalledFolder("sdmc:/3ds/osu-3ds/skins/" + sname, true)) continue;
+                if (!isValidInstalledFolder("sdmc:/3ds/circl3ds/skins/" + sname, true) && !isValidInstalledFolder("sdmc:/3ds/osu-3ds/skins/" + sname, true)) continue;
                 if (!first) json += ",";
                 first = false;
                 json += "\"";
@@ -319,7 +321,7 @@ private:
         static const char* htmlBody =
             "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<title>osu! 3DS Hub - v4.0 TurboSync</title>"
+            "<title>Circl3DS Hub - v4.0 TurboSync</title>"
             "<script src='https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js' defer></script>"
             "<style>"
             "*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}"
@@ -408,8 +410,8 @@ private:
             "<div class='app-container'>"
             "<header class='topbar'>"
             "<div class='brand'>"
-            "<div class='brand-icon'>osu!</div>"
-            "<span class='logo'>osu! 3DS Hub</span>"
+            "<div class='brand-icon'>C3D</div>"
+            "<span class='logo'>Circl3DS Hub</span>"
             "<span class='ver'>v4.0 TurboSync ⚡</span>"
             "</div>"
             "<div class='status-pill'><span class='dot'></span> 3DS Conectada</div>"
@@ -1452,8 +1454,8 @@ public:
                         isSkinUpload = (ext == ".osk");
 
                         std::string targetFolder = isSkinUpload
-                            ? "sdmc:/3ds/osu-3ds/skins/"
-                            : "sdmc:/3ds/osu-3ds/songs/";
+                            ? "sdmc:/3ds/circl3ds/skins/"
+                            : "sdmc:/3ds/circl3ds/songs/";
                         OszExtractor::ensureDirectoryRecursive(targetFolder);
                         uploadTempPath = targetFolder + uploadFileName;
 
@@ -1582,9 +1584,9 @@ public:
 
                 statusText = "Extrayendo paquete en la SD...";
                 if (isSkinUpload) {
-                    OszExtractor::extractAllPendingOsk("sdmc:/3ds/osu-3ds/skins", "sdmc:/3ds/osu-3ds/skins");
+                    OszExtractor::extractAllPendingOsk("sdmc:/3ds/circl3ds/skins", "sdmc:/3ds/circl3ds/skins");
                 } else {
-                    OszExtractor::extractAllPendingOsz("sdmc:/3ds/osu-3ds/songs", "sdmc:/3ds/osu-3ds/songs");
+                    OszExtractor::extractAllPendingOsz("sdmc:/3ds/circl3ds/songs", "sdmc:/3ds/circl3ds/songs");
                 }
 
                 uploadedCount++;

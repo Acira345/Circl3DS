@@ -233,12 +233,11 @@ void runSongSelectScreen(AppContext& ctx) {
 
     rebuildCarouselItems();
 
-    // Debounce de preview para fluidez a 60 FPS continuos
-    bool carouselSettled = (std::fabs(ctx.carouselPos - static_cast<float>(ctx.selectedSet)) < 0.05f) &&
-                           (!s_isDragging) && (std::fabs(s_scrollVelocity) < 0.5f);
+    // Debounce ultrarrápido de preview (imagen + música en hilos asíncronos sin bloqueo)
+    bool carouselSettled = (!s_isDragging) && (std::fabs(s_scrollVelocity) < 1.2f);
     if (!carouselSettled) {
-        if (ctx.previewDelay < (ctx.isNew3DS ? 10 : 16)) {
-            ctx.previewDelay = ctx.isNew3DS ? 10 : 16;
+        if (ctx.previewDelay < 4) {
+            ctx.previewDelay = 4;
         }
     } else if (ctx.previewDelay > 0) {
         if (--ctx.previewDelay == 0) {
@@ -293,8 +292,16 @@ void runSongSelectScreen(AppContext& ctx) {
     // Subida a GPU del fondo en segundo plano
     if (ctx.bgLoader.poll(ctx.bgTex)) ctx.bgFade = 0.0f;
     ctx.bgFade = Ui::approach(ctx.bgFade, 255.0f, 0.12f);
-    if (ctx.settings.songPreview && ctx.audio.isSongFinished() && !ctx.audio.isPreviewLoading()) {
-        ctx.updateSongPreview();
+    static int s_previewRetryCooldown = 0;
+    if (s_previewRetryCooldown > 0) s_previewRetryCooldown--;
+    if (ctx.settings.songPreview && carouselSettled && ctx.previewDelay == 0 && !ctx.audio.isPreviewLoading()) {
+        if (ctx.audio.isSongFinished()) {
+            ctx.updateSongPreview();
+            s_previewRetryCooldown = 45;
+        } else if (!ctx.audio.getIsPlaying() && s_previewRetryCooldown == 0) {
+            ctx.updateSongPreview();
+            s_previewRetryCooldown = 90;
+        }
     }
 
     // Botón SELECT: Alternar entre navegación de canciones y navegación de repeticiones (Replays)
@@ -398,7 +405,7 @@ void runSongSelectScreen(AppContext& ctx) {
                 ctx.selectedDiff = 0;
                 ctx.carouselPos = static_cast<float>(ctx.selectedSet);
                 ctx.audio.playHitSound(0);
-                ctx.previewDelay = ctx.isNew3DS ? 10 : 16;
+                ctx.previewDelay = 2;
             }
         }
 
@@ -689,7 +696,7 @@ void runSongSelectScreen(AppContext& ctx) {
                 autoSelectDiffForMode(ctx.settings.gameMode);
                 ctx.songSelectCardAnim = 0.0f;
                 ctx.audio.playHitSound(0);
-                ctx.previewDelay = ctx.isNew3DS ? 10 : 16;
+                ctx.previewDelay = 2;
                 rebuildCarouselItems();
             } else if (ctx.kDown & KEY_R) {
                 ctx.selectedSet = (ctx.selectedSet + 1) % numSets;
@@ -699,7 +706,7 @@ void runSongSelectScreen(AppContext& ctx) {
                 autoSelectDiffForMode(ctx.settings.gameMode);
                 ctx.songSelectCardAnim = 0.0f;
                 ctx.audio.playHitSound(0);
-                ctx.previewDelay = ctx.isNew3DS ? 10 : 16;
+                ctx.previewDelay = 2;
                 rebuildCarouselItems();
             }
 
@@ -726,7 +733,7 @@ void runSongSelectScreen(AppContext& ctx) {
                             autoSelectDiffForMode(ctx.settings.gameMode);
                             ctx.songSelectCardAnim = 0.0f;
                             ctx.audio.playHitSound(0);
-                            ctx.previewDelay = ctx.isNew3DS ? 10 : 16;
+                            ctx.previewDelay = 2;
                         }
                     } else {
                         // Tarjeta cerrada: pasa a la siguiente canción
@@ -737,7 +744,7 @@ void runSongSelectScreen(AppContext& ctx) {
                         autoSelectDiffForMode(ctx.settings.gameMode);
                         ctx.songSelectCardAnim = 0.0f;
                         ctx.audio.playHitSound(0);
-                        ctx.previewDelay = ctx.isNew3DS ? 10 : 16;
+                        ctx.previewDelay = 2;
                     }
                 } else { // SUBIR
                     if (s_cardExpanded && nDiffs > 0 && s_focusOnDiff) {
@@ -758,7 +765,7 @@ void runSongSelectScreen(AppContext& ctx) {
                         autoSelectDiffForMode(ctx.settings.gameMode);
                         ctx.songSelectCardAnim = 0.0f;
                         ctx.audio.playHitSound(0);
-                        ctx.previewDelay = ctx.isNew3DS ? 10 : 16;
+                        ctx.previewDelay = 2;
                     }
                 }
                 rebuildCarouselItems();
@@ -777,7 +784,7 @@ void runSongSelectScreen(AppContext& ctx) {
                     ctx.selectedDiff = (ctx.selectedDiff + diffDelta + numDiffs) % numDiffs;
                     ctx.songSelectCardAnim = 0.25f;
                     ctx.audio.playHitSound(0);
-                    ctx.previewDelay = ctx.isNew3DS ? 6 : 10;
+                    ctx.previewDelay = 2;
                     rebuildCarouselItems();
                 }
             }
@@ -932,7 +939,8 @@ void runSongSelectScreen(AppContext& ctx) {
                                     autoSelectDiffForMode(ctx.settings.gameMode);
                                     ctx.songSelectCardAnim = 0.0f;
                                     ctx.audio.playHitSound(0);
-                                    ctx.previewDelay = ctx.isNew3DS ? 10 : 16;
+                                    ctx.previewDelay = 0;
+                                    ctx.updateSongPreview();
                                     rebuildCarouselItems();
                                 }
                             } else if (itm.type == CarouselItem::DIFF) {
@@ -945,7 +953,8 @@ void runSongSelectScreen(AppContext& ctx) {
                                     s_focusOnDiff = true;
                                     ctx.songSelectCardAnim = 0.25f;
                                     ctx.audio.playHitSound(0);
-                                    ctx.previewDelay = ctx.isNew3DS ? 6 : 10;
+                                    ctx.previewDelay = 0;
+                                    ctx.updateSongPreview();
                                 }
                             }
                             break;
@@ -1016,7 +1025,7 @@ void runSongSelectScreen(AppContext& ctx) {
         C2D_DrawRectSolid(0.0f, 25.0f, 0.26f, 400.0f, 1.0f, Ui::withAlpha(pinkAccent, 110));
 
         Ui::pill(10.0f + dHead, 4.0f, 38.0f, 18.0f, 0.28f, pinkAccent);
-        drawCenteredText(ctx.textBuf, 29.0f + dHead, 12.5f, 0.38f, ctx.clrWhite, "osu!", 0.32f);
+        drawCenteredText(ctx.textBuf, 29.0f + dHead, 12.5f, 0.34f, ctx.clrWhite, "Circl", 0.32f);
 
         drawTextWithShadow(ctx.textBuf, 54.0f + dHead, 5.0f, 0.44f, ctx.clrWhite, LOC(STR_SONG_SELECT_TITLE), 0.32f);
 
@@ -1318,6 +1327,9 @@ void runSongSelectScreen(AppContext& ctx) {
             drawKeyBadge(ctx.textBuf, 292.0f + dFoot, footY + 4.0f, "X", LOC(STR_SONG_RECORDS_LABEL), Ui::rgba(46, 213, 115));
         }
 
+        if (ctx.settings.showFps) {
+            Ui::drawFpsCounter(400.0f, 240.0f, ctx.currentFps, ctx.currentFrameMs, ctx.textBuf, depthShift(1.5f));
+        }
         Ui::drawTransition(400.0f, 240.0f, ctx.screenFade, ctx.clrPrimary);
     }
 
@@ -1464,14 +1476,14 @@ void runSongSelectScreen(AppContext& ctx) {
 
                     // Indicador en la derecha: contador de dificultades o botón de expansión/cierre
                     if (isSel) {
-                        float pillW = 58.0f;
+                        float pillW = 62.0f;
                         float pillH = 18.0f;
                         float pillX = cardX + cardW - pillW - 6.0f;
                         float pillY = screenY + (cardH - pillH) * 0.5f;
                         Ui::pill(pillX, pillY, pillW, pillH, 0.22f, Ui::rgba(14, 10, 24, 210));
                         drawRectOutline(pillX, pillY, pillW, pillH, 1.0f, starClr, 0.23f);
-                        const char* expText = s_cardExpanded ? "▲ CERRAR" : "▼ ABRIR";
-                        drawCenteredTextWithShadow(ctx.textBuf, pillX + pillW * 0.5f, pillY + 9.0f, 0.30f, ctx.clrWhite, expText, 0.24f);
+                        const char* expText = s_cardExpanded ? LOC(STR_SONG_BTN_CLOSE_DIFFS) : LOC(STR_SONG_BTN_OPEN_DIFFS);
+                        drawCenteredTextWithShadow(ctx.textBuf, pillX + pillW * 0.5f, pillY + 9.0f, 0.29f, ctx.clrWhite, expText, 0.24f);
                     } else {
                         int nDiffs = static_cast<int>(cSet.difficulties.size());
                         float bdgW = 54.0f;
@@ -1480,9 +1492,13 @@ void runSongSelectScreen(AppContext& ctx) {
                         float bdgY = screenY + (cardH - bdgH) * 0.5f;
                         Ui::pill(bdgX, bdgY, bdgW, bdgH, 0.20f, Ui::rgba(16, 12, 26, 210));
                         drawRectOutline(bdgX, bdgY, bdgW, bdgH, 0.8f, Ui::rgba(85, 75, 115, 160), 0.21f);
-                        char cntBuf[16];
-                        std::snprintf(cntBuf, sizeof(cntBuf), "%d DIF%s", nDiffs, nDiffs == 1 ? "" : "S");
-                        drawCenteredTextWithShadow(ctx.textBuf, bdgX + bdgW * 0.5f, bdgY + 8.5f, 0.32f,
+                        char cntBuf[24];
+                        if (nDiffs == 1) {
+                            std::snprintf(cntBuf, sizeof(cntBuf), "%s", LOC(STR_SONG_DIFF_BADGE_SINGLE));
+                        } else {
+                            std::snprintf(cntBuf, sizeof(cntBuf), LOC(STR_SONG_DIFF_BADGE_PLURAL_FMT), nDiffs);
+                        }
+                        drawCenteredTextWithShadow(ctx.textBuf, bdgX + bdgW * 0.5f, bdgY + 8.5f, 0.31f,
                                                    Ui::rgba(215, 210, 235), cntBuf, 0.23f);
                     }
                 } else if (itm.type == CarouselItem::DIFF) {
@@ -1530,9 +1546,10 @@ void runSongSelectScreen(AppContext& ctx) {
                     drawTextWithShadow(ctx.textBuf, diffX + 22.0f, screenY + 2.5f, 0.35f,
                                        isDiffSel ? ctx.clrWhite : Ui::rgba(235, 230, 245), vStr.c_str(), 0.23f);
                     if (!dEnt.creator.empty()) {
-                        std::string mStr = "mapped by " + truncateString(dEnt.creator, 12);
+                        char mStr[64];
+                        std::snprintf(mStr, sizeof(mStr), LOC(STR_SONG_MAPPED_BY_SHORT_FMT), truncateString(dEnt.creator, 12).c_str());
                         drawTextWithShadow(ctx.textBuf, diffX + 130.0f, screenY + 2.5f, 0.28f,
-                                           Ui::rgba(165, 160, 190), mStr.c_str(), 0.23f);
+                                           Ui::rgba(165, 160, 190), mStr, 0.23f);
                     }
 
                     // Línea inferior: Estrella vectorial + valor numérico + estrellas decorativas
@@ -1676,12 +1693,12 @@ void runSongSelectScreen(AppContext& ctx) {
         Ui::slantButton(192.0f, btnY, 60.0f, btnH, slant, Ui::rgba(66, 100, 220),
                         LOC(STR_CARD_ORDER), shortOrder, ctx.textBuf, false, 0.37f);
 
-        // Botón 5: Botón circular libre de osu! (sin tarjeta rectangular de fondo)
+        // Botón 5: Botón circular libre (PLAY)
         float osuX = 286.0f, osuY = 217.5f, osuR = 17.5f;
         Ui::glow(osuX, osuY, 0.38f, 22.0f, Ui::withAlpha(pinkAccent, 130), 3);
         C2D_DrawCircleSolid(osuX, osuY, 0.39f, osuR + 2.5f, ctx.clrWhite);
         C2D_DrawCircleSolid(osuX, osuY, 0.40f, osuR, pinkAccent);
-        drawCenteredTextWithShadow(ctx.textBuf, osuX, osuY - 1.5f, 0.44f, ctx.clrWhite, "osu!", 0.42f, Ui::rgba(160, 30, 85));
+        drawCenteredTextWithShadow(ctx.textBuf, osuX, osuY - 1.5f, 0.44f, ctx.clrWhite, "PLAY", 0.42f, Ui::rgba(160, 30, 85));
     }
 
     // Modal de confirmación de eliminación

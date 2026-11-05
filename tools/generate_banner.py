@@ -331,7 +331,7 @@ def create_banner_image(output_path, scale=2):
         pitch_deg=17.0,
         yaw_deg=-10.0,
         scale=scale,
-        text="osu!"
+        text="Circl"
     )
     
     # Centrar medallón en X=62, Y=62 (espacio 256x128)
@@ -354,7 +354,7 @@ def create_banner_image(output_path, scale=2):
     center_right_x = int(185 * scale)
     
     # Medir Título: 'osu! 3DS'
-    title_text = "osu! 3DS"
+    title_text = "Circl3DS"
     t_bbox = tdraw.textbbox((0, 0), title_text, font=font_title)
     t_w = t_bbox[2] - t_bbox[0]
     t_h = t_bbox[3] - t_bbox[1]
@@ -431,7 +431,7 @@ def create_icon_image(output_path, scale=4):
         pitch_deg=14.0,
         yaw_deg=-8.0,
         scale=scale,
-        text="osu!",
+        text="Circl",
         text_size_ratio=0.92
     )
     

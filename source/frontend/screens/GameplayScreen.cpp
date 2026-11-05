@@ -8,6 +8,7 @@ void runGameplayScreen(AppContext& ctx) {
     // =========================================================
     if (ctx.inSongIntro) {
         ctx.songIntroTick++;
+        ctx.bgLoader.poll(ctx.bgTex);
 
         // Permitir cancelar con B antes de que arranque la canción
         if (ctx.kDown & KEY_B) {
@@ -21,8 +22,8 @@ void runGameplayScreen(AppContext& ctx) {
             return;
         }
 
-        // Ejecutar 1 tarea pesada por fotograma tras completar la animación de entrada (tick >= 10)
-        if (ctx.songIntroTick == 10 && ctx.songIntroLoadStage == 0) {
+        // Ejecutar 1 tarea pesada cada 2 fotogramas para entrar a la canción en ~0.3s sin tirones
+        if (ctx.songIntroTick == 2 && ctx.songIntroLoadStage == 0) {
             ctx.songIntroLoadStage = 1;
             if (!ctx.beatmap.loadFromFile(ctx.songIntroOsuPath, false)) {
                 ctx.inSongIntro = false;
@@ -32,7 +33,7 @@ void runGameplayScreen(AppContext& ctx) {
                 return;
             }
             ctx.beatmap.applyMods(ctx.settings.activeMods);
-        } else if (ctx.songIntroTick == 13 && ctx.songIntroLoadStage == 1) {
+        } else if (ctx.songIntroTick == 4 && ctx.songIntroLoadStage == 1) {
             ctx.songIntroLoadStage = 2;
             // Reutilizar la textura de fondo si ya fue cargada asíncronamente en el selector
             if (!ctx.beatmap.fullBackgroundPath.empty()) {
@@ -51,19 +52,19 @@ void runGameplayScreen(AppContext& ctx) {
             ctx.breakNextObjPos = !ctx.beatmap.circles.empty()
                 ? Vec2(ctx.beatmap.circles.front().x, ctx.beatmap.circles.front().y)
                 : Vec2(256.0f, 192.0f);
-        } else if (ctx.songIntroTick == 16 && ctx.songIntroLoadStage == 2) {
+        } else if (ctx.songIntroTick == 6 && ctx.songIntroLoadStage == 2) {
             ctx.songIntroLoadStage = 3;
             ctx.audio.setVolumes(ctx.settings.musicVolume, ctx.settings.sfxVolume);
             ctx.applyActiveSkinAudio();
             if (ctx.settings.beatmapHitsounds && !ctx.beatmap.folderPath.empty()) {
-                ctx.audio.loadBeatmapHitsounds(ctx.beatmap.folderPath, ctx.beatmap.sampleSetName);
+                ctx.customHitsoundsActive = ctx.audio.loadBeatmapHitsounds(ctx.beatmap.folderPath, ctx.beatmap.sampleSetName);
             }
             if (ctx.settings.enableVideo && !ctx.beatmap.fullVideoPath.empty()) {
                 ctx.videoPlayer.openVideo(ctx.beatmap.fullVideoPath, ctx.beatmap.videoOffsetMs);
             } else {
                 ctx.videoPlayer.closeVideo();
             }
-        } else if (ctx.songIntroTick == 19 && ctx.songIntroLoadStage == 3) {
+        } else if (ctx.songIntroTick == 8 && ctx.songIntroLoadStage == 3) {
             ctx.songIntroLoadStage = 4;
             bool isTaiko = (ctx.songIntroMode == 1);
             bool isCatch = (ctx.songIntroMode == 2);
@@ -71,16 +72,16 @@ void runGameplayScreen(AppContext& ctx) {
             int leadIn = std::max(0, ctx.beatmap.audioLeadIn);
             if (isTaiko && !ctx.taikoEngine.notes.empty()) {
                 int firstObjTime = ctx.taikoEngine.notes.front().time;
-                if (firstObjTime < 1400) leadIn = std::max(leadIn, 1400 - firstObjTime);
+                if (firstObjTime < 1000) leadIn = std::max(leadIn, 1000 - firstObjTime);
             } else if (isCatch && !ctx.catchEngine.fruits.empty()) {
                 int firstObjTime = ctx.catchEngine.fruits.front().time;
-                if (firstObjTime < 1300) leadIn = std::max(leadIn, 1300 - firstObjTime);
+                if (firstObjTime < 1000) leadIn = std::max(leadIn, 1000 - firstObjTime);
             } else if (isMania && !ctx.maniaEngine.notes.empty()) {
                 int firstObjTime = ctx.maniaEngine.notes.front().time;
-                if (firstObjTime < 1200) leadIn = std::max(leadIn, 1200 - firstObjTime);
+                if (firstObjTime < 1000) leadIn = std::max(leadIn, 1000 - firstObjTime);
             } else if (!ctx.beatmap.circles.empty()) {
                 int firstObjTime = ctx.beatmap.circles.front().time;
-                int minStartWait = static_cast<int>(ctx.beatmap.diff.preempt) + 500;
+                int minStartWait = static_cast<int>(ctx.beatmap.diff.preempt) + 350;
                 if (firstObjTime < minStartWait) leadIn = std::max(leadIn, minStartWait - firstObjTime);
             }
             ctx.songIntroLeadInMs = leadIn;
@@ -88,23 +89,23 @@ void runGameplayScreen(AppContext& ctx) {
             // Pre-carga y decodifica los 3 buffers de audio iniciales en RAM y congela el reloj
             ctx.audio.startMusic(ctx.beatmap.fullAudioPath, leadIn, speedRate, 0);
             ctx.audio.pauseMusic();
-        } else if (ctx.songIntroTick == 21 && ctx.songIntroLoadStage == 4) {
+        } else if (ctx.songIntroTick == 10 && ctx.songIntroLoadStage == 4) {
             ctx.songIntroLoadStage = 5;
         }
 
-        // Animación de entrada (ticks 1..10) y salida (ticks 24..38) a 60 FPS estables
-        float inT = std::min(1.0f, static_cast<float>(ctx.songIntroTick) / 10.0f);
+        // Animación rápida de entrada (ticks 1..5) y salida (ticks 12..20) a 60 FPS estables
+        float inT = std::min(1.0f, static_cast<float>(ctx.songIntroTick) / 5.0f);
         float easeIn = std::sin(inT * (static_cast<float>(M_PI) * 0.5f));
-        float outT = (ctx.songIntroTick > 24)
-            ? std::min(1.0f, static_cast<float>(ctx.songIntroTick - 24) / 14.0f)
+        float outT = (ctx.songIntroTick > 12)
+            ? std::min(1.0f, static_cast<float>(ctx.songIntroTick - 12) / 8.0f)
             : 0.0f;
         float easeOut = outT * outT;
 
-        if (ctx.songIntroTick >= 38) {
+        if (ctx.songIntroTick >= 20) {
             ctx.inSongIntro = false;
             ctx.audio.resumeMusic();
             ctx.gameplayFallbackStartTick = osGetTime() + ctx.songIntroLeadInMs;
-            ctx.screenFade = 0.35f;
+            ctx.screenFade = 0.25f;
         } else {
             u32 lazerPink = Ui::rgba(255, 102, 171);
             u32 lazerCyan = Ui::rgba(56, 210, 255);
@@ -158,10 +159,10 @@ void runGameplayScreen(AppContext& ctx) {
                 Ui::panel(cX, cY, cW, cH, 0.25f, Ui::rgba(16, 11, 30, static_cast<u8>(panelAlpha * 0.86f)), lazerPink);
 
                 // Insignia superior: Modo + Estrellas
-                const char* modeName = (ctx.songIntroMode == 1) ? "osu!taiko"
-                                     : (ctx.songIntroMode == 2) ? "osu!catch"
-                                     : (ctx.songIntroMode == 3) ? "osu!mania"
-                                     : "osu!standard";
+                const char* modeName = (ctx.songIntroMode == 1) ? "Taiko"
+                                     : (ctx.songIntroMode == 2) ? "Catch"
+                                     : (ctx.songIntroMode == 3) ? "Mania"
+                                     : "Standard";
                 Ui::slantRect(cX + 14.0f, cY + 12.0f, 98.0f, 20.0f, -5.0f, 0.28f, lazerPink);
                 drawCenteredText(ctx.textBuf, cX + 63.0f, cY + 22.0f, 0.35f, ctx.clrWhite, modeName, 0.31f);
 
@@ -224,7 +225,7 @@ void runGameplayScreen(AppContext& ctx) {
             C2D_DrawCircleSolid(bCx, bCy, 0.25f, bR, 0xFFFFFFFF);
             C2D_DrawCircleSolid(bCx, bCy, 0.28f, bR - 3.0f, lazerPink);
             C2D_DrawCircleSolid(bCx, bCy, 0.30f, bR - 6.0f, Ui::rgba(85, 23, 184));
-            drawCenteredTextWithShadow(ctx.textBuf, bCx, bCy - 2.0f, 0.82f, ctx.clrWhite, "osu!", 0.35f);
+            drawCenteredTextWithShadow(ctx.textBuf, bCx, bCy - 2.0f, 0.70f, ctx.clrWhite, "Circl", 0.35f);
 
             char pctTxt[32];
             std::snprintf(pctTxt, sizeof(pctTxt), LOC(STR_GAME_LOADING_PCT_FMT), loadPct * 100.0f);
@@ -423,6 +424,10 @@ void runGameplayScreen(AppContext& ctx) {
             ctx.skipAvailable = true;
             ctx.skipTargetMs = songTime + ctx.breakRemainingMs - 1200;
         }
+        if (!ctx.skipAvailable && ctx.songOutroTick >= 25 && !ctx.audio.isSongFinished()) {
+            ctx.skipAvailable = true;
+            ctx.skipTargetMs = -1; // Saltar outro final hacia Resultados
+        }
     }
 
     // 3. Procesar activación de SKIP (Toque táctil o botones ZL / ZR / START)
@@ -431,11 +436,15 @@ void runGameplayScreen(AppContext& ctx) {
     bool btnSkip = (ctx.kDown & (KEY_ZL | KEY_ZR | KEY_START)) != 0;
     if (ctx.skipAvailable && !ctx.isPaused && (touchOnSkip || btnSkip)) {
         ctx.audio.playHitSound(2);
-        ctx.audio.seekToMs(ctx.skipTargetMs);
-        songTime = ctx.audio.getTimeMs() - ctx.settings.audioOffsetMs;
-        ctx.lastNcStep = -999999;
-        if (ctx.settings.enableVideo) {
-            ctx.videoPlayer.update(songTime, ctx.isPaused);
+        if (ctx.skipTargetMs == -1) {
+            ctx.songOutroTick = 165;
+        } else {
+            ctx.audio.seekToMs(ctx.skipTargetMs);
+            songTime = ctx.audio.getTimeMs() - ctx.settings.audioOffsetMs;
+            ctx.lastNcStep = -999999;
+            if (ctx.settings.enableVideo) {
+                ctx.videoPlayer.update(songTime, ctx.isPaused);
+            }
         }
         ctx.skipAvailable = false;
         ctx.kDown &= ~(KEY_ZL | KEY_ZR | KEY_START | KEY_TOUCH);
@@ -756,7 +765,7 @@ void runGameplayScreen(AppContext& ctx) {
         float hit100    = ctx.beatmap.diff.hit100;
         float hit300    = ctx.beatmap.diff.hit300;
 
-        if (!ctx.inBreakPeriod && !ctx.beatmap.circles.empty() && songTime >= ctx.beatmap.circles.front().time &&
+        if (!ctx.inBreakPeriod && ctx.songOutroTick == 0 && !ctx.beatmap.circles.empty() && songTime >= ctx.beatmap.circles.front().time &&
             songTime <= ctx.beatmap.circles.back().endTime) {
             ctx.hp -= (0.00018f * ctx.beatmap.diff.hp);
             if (ctx.hp <= 0.0f) {
@@ -1150,6 +1159,14 @@ void runGameplayScreen(AppContext& ctx) {
             }
 
             allObjectsDone = (ctx.maniaEngine.nextNoteIndex >= ctx.maniaEngine.notes.size());
+            if (allObjectsDone) {
+                for (const auto& mn : ctx.maniaEngine.notes) {
+                    if (mn.isHold && !mn.fullyCompleted) {
+                        allObjectsDone = false;
+                        break;
+                    }
+                }
+            }
         } else if (isCatchPlay) {
             // 1. Controles y Movimiento del Catcher
             float moveInput = 0.0f;
@@ -1333,95 +1350,122 @@ void runGameplayScreen(AppContext& ctx) {
             ctx.currentReplay.frames.push_back(rf);
         }
 
-        int songEndTime = isTaikoPlay ? (!ctx.taikoEngine.notes.empty() ? ctx.taikoEngine.notes.back().endTime : 0)
-                        : isCatchPlay ? (!ctx.catchEngine.fruits.empty() ? ctx.catchEngine.fruits.back().time : 0)
-                        : isManiaPlay ? (!ctx.maniaEngine.notes.empty() ? ctx.maniaEngine.notes.back().endTime : 0)
-                        : (!ctx.beatmap.circles.empty() ? ctx.beatmap.circles.back().endTime : 0);
-        if ((allObjectsDone && songEndTime > 0 && songTime > songEndTime + 1000) ||
-            ctx.audio.isSongFinished()) {
-            ctx.audio.stopMusic();
-            ctx.videoPlayer.closeVideo();
-
-            int totalJudged = ctx.count300 + ctx.count100 + ctx.count50 + ctx.countMiss;
-            float acc = (totalJudged > 0)
-                ? ((ctx.count300 * 300.0f + ctx.count100 * 100.0f + ctx.count50 * 50.0f) / (totalJudged * 300.0f)) * 100.0f
-                : 100.0f;
-            const char* grade = "D";
-            if (acc >= 99.9f && ctx.countMiss == 0) grade = "SS";
-            else if (acc >= 93.0f && ctx.countMiss == 0) grade = "S";
-            else if (acc >= 85.0f) grade = "A";
-            else if (acc >= 75.0f) grade = "B";
-            else if (acc >= 65.0f) grade = "C";
-
-            if (!ctx.allHitErrors.empty()) {
-                float sum = 0.0f;
-                for (float e : ctx.allHitErrors) sum += e;
-                ctx.lastMeanHitError = sum / static_cast<float>(ctx.allHitErrors.size());
-                float varSum = 0.0f;
-                for (float e : ctx.allHitErrors) {
-                    float d = e - ctx.lastMeanHitError;
-                    varSum += d * d;
-                }
-                ctx.lastUnstableRate = std::sqrt(varSum / static_cast<float>(ctx.allHitErrors.size())) * 10.0f;
-            } else {
-                ctx.lastMeanHitError = 0.0f;
-                ctx.lastUnstableRate = 0.0f;
+        int songEndTime = 0;
+        if (isTaikoPlay) {
+            for (const auto& tn : ctx.taikoEngine.notes) {
+                if (tn.endTime > songEndTime) songEndTime = tn.endTime;
             }
+        } else if (isCatchPlay) {
+            if (!ctx.catchEngine.fruits.empty()) songEndTime = ctx.catchEngine.fruits.back().time;
+        } else if (isManiaPlay) {
+            for (const auto& mn : ctx.maniaEngine.notes) {
+                if (mn.endTime > songEndTime) songEndTime = mn.endTime;
+            }
+        } else {
+            for (const auto& c : ctx.beatmap.circles) {
+                if (c.endTime > songEndTime) songEndTime = c.endTime;
+            }
+        }
 
-            ctx.lastEarnedPP = calculatePP(
-                ctx.beatmap.starRating,
-                ctx.beatmap.diff.ar,
-                ctx.beatmap.diff.od,
-                ctx.maxCombo,
-                ctx.beatmap.maxPossibleCombo,
-                ctx.count300, ctx.count100, ctx.count50, ctx.countMiss,
-                ctx.settings.activeMods
-            );
+        bool notesFinished = (allObjectsDone && songEndTime > 0 && songTime >= songEndTime);
+        if (notesFinished || ctx.audio.isSongFinished()) {
+            if (ctx.songOutroTick < 165) {
+                ctx.songOutroTick++;
+            }
+            bool outroComplete = (ctx.songOutroTick >= 165) || (ctx.audio.isSongFinished() && ctx.songOutroTick >= 90);
+            if (outroComplete) {
+                // Estilo osu! PC: si la canción aún sigue sonando en su outro, mantener la música
+                // reproduciéndose suavemente al entrar a la pantalla de Resultados en lugar de cortarla de golpe.
+                if (ctx.audio.isSongFinished()) {
+                    ctx.audio.stopMusic();
+                }
+                ctx.videoPlayer.closeVideo();
+                ctx.screenFade = 1.0f;
 
-            int currentPlayMode = isTaikoPlay ? 1 : isCatchPlay ? 2 : isManiaPlay ? 3 : 0;
-            if (ctx.isReplayPlaying) {
-                ctx.isReplayPlaying = false;
-                ctx.appState = STATE_RESULTS;
+                int totalJudged = ctx.count300 + ctx.count100 + ctx.count50 + ctx.countMiss;
+                float acc = (totalJudged > 0)
+                    ? ((ctx.count300 * 300.0f + ctx.count100 * 100.0f + ctx.count50 * 50.0f) / (totalJudged * 300.0f)) * 100.0f
+                    : 100.0f;
+                const char* grade = "D";
+                bool isSilverMod = (ctx.settings.activeMods & (MOD_HD | MOD_FL)) != 0;
+                if (acc >= 99.9f && ctx.countMiss == 0) grade = isSilverMod ? "SSH" : "SS";
+                else if (acc >= 93.0f && ctx.countMiss == 0) grade = isSilverMod ? "SH" : "S";
+                else if (acc >= 85.0f) grade = "A";
+                else if (acc >= 75.0f) grade = "B";
+                else if (acc >= 65.0f) grade = "C";
+
+                if (!ctx.allHitErrors.empty()) {
+                    float sum = 0.0f;
+                    for (float e : ctx.allHitErrors) sum += e;
+                    ctx.lastMeanHitError = sum / static_cast<float>(ctx.allHitErrors.size());
+                    float varSum = 0.0f;
+                    for (float e : ctx.allHitErrors) {
+                        float d = e - ctx.lastMeanHitError;
+                        varSum += d * d;
+                    }
+                    ctx.lastUnstableRate = std::sqrt(varSum / static_cast<float>(ctx.allHitErrors.size())) * 10.0f;
+                } else {
+                    ctx.lastMeanHitError = 0.0f;
+                    ctx.lastUnstableRate = 0.0f;
+                }
+
+                ctx.lastEarnedPP = calculatePP(
+                    ctx.beatmap.starRating,
+                    ctx.beatmap.diff.ar,
+                    ctx.beatmap.diff.od,
+                    ctx.maxCombo,
+                    ctx.beatmap.maxPossibleCombo,
+                    ctx.count300, ctx.count100, ctx.count50, ctx.countMiss,
+                    ctx.settings.activeMods
+                );
+
+                int currentPlayMode = isTaikoPlay ? 1 : isCatchPlay ? 2 : isManiaPlay ? 3 : 0;
+                if (ctx.isReplayPlaying) {
+                    ctx.isReplayPlaying = false;
+                    ctx.appState = STATE_RESULTS;
+                    return;
+                }
+
+                // Finalizar metadatos de la repetición grabada en la partida
+                ctx.currentReplay.score = ctx.score;
+                ctx.currentReplay.maxCombo = ctx.maxCombo;
+                ctx.currentReplay.accuracy = acc;
+                ctx.currentReplay.grade = grade;
+                ctx.currentReplay.count300 = ctx.count300;
+                ctx.currentReplay.count100 = ctx.count100;
+                ctx.currentReplay.count50 = ctx.count50;
+                ctx.currentReplay.countMiss = ctx.countMiss;
+                ctx.currentReplay.pp = ctx.lastEarnedPP;
+                ctx.currentReplay.gameMode = currentPlayMode;
+                ctx.currentReplay.activeMods = ctx.settings.activeMods;
+                ctx.currentReplay.title = ctx.beatmap.title;
+                ctx.currentReplay.artist = ctx.beatmap.artist;
+                ctx.currentReplay.difficulty = ctx.beatmap.version;
+                ctx.currentReplay.playerName = ctx.sysUser;
+
+                int achievedRank = -1;
+                ctx.newRecordAchieved = ctx.scoreMgr.submitScore(
+                    ctx.beatmap.filePath, ctx.score, ctx.maxCombo, acc, grade, ctx.settings.activeMods, ctx.lastEarnedPP, currentPlayMode, &achievedRank
+                );
+
+                // Almacenar automáticamente la repetición de los 3 mejores récords locales
+                if (achievedRank >= 1 && achievedRank <= 3 && !(ctx.settings.activeMods & MOD_AUTO)) {
+                    ReplayManager::saveTopReplay(ctx.beatmap.filePath, currentPlayMode, achievedRank, ctx.currentReplay);
+                }
+
+                if (ctx.multiMgr.inMultiplayer) {
+                    ctx.multiMgr.matchStarted = false;
+                    ctx.multiMgr.matchInProgressFlag = false;
+                    ctx.multiMgr.matchFinished = true;
+                    ctx.multiMgr.sendLiveGameplay(ctx.score, ctx.combo, ctx.maxCombo, acc, ctx.hp, grade, ctx.count300, ctx.count100, ctx.count50, ctx.countMiss, true, ctx.stageFailed);
+                    ctx.appState = STATE_MULTI_RESULTS;
+                } else {
+                    ctx.appState = STATE_RESULTS;
+                }
                 return;
             }
-
-            // Finalizar metadatos de la repetición grabada en la partida
-            ctx.currentReplay.score = ctx.score;
-            ctx.currentReplay.maxCombo = ctx.maxCombo;
-            ctx.currentReplay.accuracy = acc;
-            ctx.currentReplay.grade = grade;
-            ctx.currentReplay.count300 = ctx.count300;
-            ctx.currentReplay.count100 = ctx.count100;
-            ctx.currentReplay.count50 = ctx.count50;
-            ctx.currentReplay.countMiss = ctx.countMiss;
-            ctx.currentReplay.pp = ctx.lastEarnedPP;
-            ctx.currentReplay.gameMode = currentPlayMode;
-            ctx.currentReplay.activeMods = ctx.settings.activeMods;
-            ctx.currentReplay.title = ctx.beatmap.title;
-            ctx.currentReplay.artist = ctx.beatmap.artist;
-            ctx.currentReplay.difficulty = ctx.beatmap.version;
-            ctx.currentReplay.playerName = ctx.sysUser;
-
-            int achievedRank = -1;
-            ctx.newRecordAchieved = ctx.scoreMgr.submitScore(
-                ctx.beatmap.filePath, ctx.score, ctx.maxCombo, acc, grade, ctx.settings.activeMods, ctx.lastEarnedPP, currentPlayMode, &achievedRank
-            );
-
-            // Almacenar automáticamente la repetición de los 3 mejores récords locales
-            if (achievedRank >= 1 && achievedRank <= 3 && !(ctx.settings.activeMods & MOD_AUTO)) {
-                ReplayManager::saveTopReplay(ctx.beatmap.filePath, currentPlayMode, achievedRank, ctx.currentReplay);
-            }
-
-            if (ctx.multiMgr.inMultiplayer) {
-                ctx.multiMgr.matchStarted = false;
-                ctx.multiMgr.matchInProgressFlag = false;
-                ctx.multiMgr.matchFinished = true;
-                ctx.multiMgr.sendLiveGameplay(ctx.score, ctx.combo, ctx.maxCombo, acc, ctx.hp, grade, ctx.count300, ctx.count100, ctx.count50, ctx.countMiss, true, ctx.stageFailed);
-                ctx.appState = STATE_MULTI_RESULTS;
-            } else {
-                ctx.appState = STATE_RESULTS;
-            }
-            return;
+        } else {
+            ctx.songOutroTick = 0;
         }
     }
 
@@ -1634,16 +1678,28 @@ void runGameplayScreen(AppContext& ctx) {
                 std::snprintf(hudStr, sizeof(hudStr), "%.1f%%", acc);
                 drawTextWithShadow(ctx.textBuf, scBoxX + 12.0f, scBoxY + 25.0f, 0.38f, lazerCyan, hudStr, 0.75f);
 
-                float livePP = calculatePP(
-                    ctx.beatmap.starRating,
-                    ctx.beatmap.diff.ar,
-                    ctx.beatmap.diff.od,
-                    ctx.maxCombo,
-                    std::max(1, totalJudged),
-                    ctx.count300, ctx.count100, ctx.count50, ctx.countMiss,
-                    ctx.settings.activeMods
-                );
-                std::snprintf(hudStr, sizeof(hudStr), "%.0fpp", livePP);
+                static int s_lastJudgedPP = -1;
+                static int s_lastMaxComboPP = -1;
+                static uint32_t s_lastModsPP = 0xFFFFFFFFu;
+                static float s_lastStarsPP = -1.0f;
+                static float s_cachedLivePP = 0.0f;
+                if (totalJudged != s_lastJudgedPP || ctx.maxCombo != s_lastMaxComboPP ||
+                    ctx.settings.activeMods != s_lastModsPP || ctx.beatmap.starRating != s_lastStarsPP) {
+                    s_lastJudgedPP = totalJudged;
+                    s_lastMaxComboPP = ctx.maxCombo;
+                    s_lastModsPP = ctx.settings.activeMods;
+                    s_lastStarsPP = ctx.beatmap.starRating;
+                    s_cachedLivePP = calculatePP(
+                        ctx.beatmap.starRating,
+                        ctx.beatmap.diff.ar,
+                        ctx.beatmap.diff.od,
+                        ctx.maxCombo,
+                        std::max(1, totalJudged),
+                        ctx.count300, ctx.count100, ctx.count50, ctx.countMiss,
+                        ctx.settings.activeMods
+                    );
+                }
+                std::snprintf(hudStr, sizeof(hudStr), "%.0fpp", s_cachedLivePP);
                 drawTextWithShadow(ctx.textBuf, scBoxX + 68.0f, scBoxY + 26.0f, 0.36f, lazerPink, hudStr, 0.75f);
 
                 if (ctx.settings.activeMods != MOD_NONE) {
@@ -1857,14 +1913,14 @@ void runGameplayScreen(AppContext& ctx) {
                 else bGrClr = ctx.clrMiss;
 
                 if (ctx.score >= bestScore) {
-                    entries.push_back({ "#1", "TU", ctx.score, liveGrade, liveGradeClr, true });
+                    entries.push_back({ "#1", LOC(STR_MULTI_YOU), ctx.score, liveGrade, liveGradeClr, true });
                     entries.push_back({ "#2", "RECORD", bestScore, bGr, bGrClr, false });
                 } else {
                     entries.push_back({ "#1", "RECORD", bestScore, bGr, bGrClr, false });
-                    entries.push_back({ "#2", "TU", ctx.score, liveGrade, liveGradeClr, true });
+                    entries.push_back({ "#2", LOC(STR_MULTI_YOU), ctx.score, liveGrade, liveGradeClr, true });
                 }
             } else {
-                entries.push_back({ "#1", "TU", ctx.score, liveGrade, liveGradeClr, true });
+                entries.push_back({ "#1", LOC(STR_MULTI_YOU), ctx.score, liveGrade, liveGradeClr, true });
             }
 
             for (size_t e = 0; e < entries.size(); ++e) {
@@ -2140,6 +2196,21 @@ void runGameplayScreen(AppContext& ctx) {
             drawRectOutline(0.0f, 0.0f, screenW, 240.0f, 4.0f, Ui::rgba(255, 60, 75, cbAlpha), 0.79f);
         }
 
+        // Desvanecimiento suave de cierre (Outro Fade estilo osu! PC) al terminar la última nota
+        if (ctx.songOutroTick > 35 && !ctx.isPaused) {
+            float fadeStart = ctx.audio.isSongFinished() ? 20.0f : 42.0f;
+            float fadeSpan  = ctx.audio.isSongFinished() ? 68.0f : 120.0f;
+            float outroT = std::max(0.0f, std::min(1.0f, (static_cast<float>(ctx.songOutroTick) - fadeStart) / fadeSpan));
+            u8 outroAlpha = static_cast<u8>(outroT * outroT * 235.0f);
+            if (outroAlpha > 0) {
+                C2D_DrawRectSolid(0.0f, 0.0f, 0.89f, screenW, 240.0f, Ui::rgba(10, 7, 18, outroAlpha));
+            }
+        }
+
+        if (ctx.settings.showFps && (drawFullHud || (ctx.settings.playOnBottomScreen && screenW > 350.0f))) {
+            Ui::drawFpsCounter(screenW, 240.0f, ctx.currentFps, ctx.currentFrameMs, ctx.textBuf, dFrontHud);
+        }
+
         Ui::drawTransition(screenW, 240.0f, ctx.screenFade, ctx.clrPrimary);
     };
 
@@ -2248,6 +2319,16 @@ void runGameplayScreen(AppContext& ctx) {
         renderPlayfield(320.0f, PLAYFIELD_BOT_OFFSET_X, PLAYFIELD_BOT_OFFSET_Y, 0.0f, 0.0f, false);
     } else {
         StandardMode::renderBottomTablet(ctx);
+    }
+
+    if (ctx.songOutroTick > 35 && !ctx.isPaused && !ctx.settings.playOnBottomScreen) {
+        float fadeStart = ctx.audio.isSongFinished() ? 20.0f : 42.0f;
+        float fadeSpan  = ctx.audio.isSongFinished() ? 68.0f : 120.0f;
+        float outroT = std::max(0.0f, std::min(1.0f, (static_cast<float>(ctx.songOutroTick) - fadeStart) / fadeSpan));
+        u8 outroAlpha = static_cast<u8>(outroT * outroT * 210.0f);
+        if (outroAlpha > 0) {
+            C2D_DrawRectSolid(0.0f, 0.0f, 0.82f, 320.0f, 240.0f, Ui::rgba(10, 7, 18, outroAlpha));
+        }
     }
 
     C3D_FrameEnd(0);

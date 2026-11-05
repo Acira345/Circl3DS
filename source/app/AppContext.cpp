@@ -45,6 +45,8 @@ void AppContext::init() {
         if (!tmp.empty()) sysUser = tmp;
     }
     multiMgr.localPlayerName = sysUser;
+    profileMgr.init(sysUser);
+    profileMgr.refreshStats(scoreMgr, songMgr);
 
     // Detectar si la consola es New Nintendo 3DS / New 2DS XL (804 MHz Quad-Core + 256 MB RAM)
     isNew3DS = false;
@@ -68,6 +70,18 @@ void AppContext::init() {
 }
 
 void AppContext::beginFrame() {
+    u64 nowTick = svcGetSystemTick();
+    if (lastFrameTick != 0) {
+        u64 deltaTicks = nowTick - lastFrameTick;
+        float dtMs = static_cast<float>(deltaTicks) * (1000.0f / static_cast<float>(SYSCLOCK_ARM11));
+        if (dtMs >= 1.0f && dtMs <= 500.0f) {
+            currentFrameMs = currentFrameMs * 0.85f + dtMs * 0.15f;
+            float instFps = std::min(60.0f, 1000.0f / std::max(16.666f, currentFrameMs));
+            currentFps = currentFps * 0.85f + instFps * 0.15f;
+        }
+    }
+    lastFrameTick = nowTick;
+
     hidScanInput();
     kDown = hidKeysDown();
     kHeld = hidKeysHeld();
@@ -171,18 +185,27 @@ void AppContext::shutdown() {
 
 void AppContext::applyActiveSkinAudio() {
     if (skinMgr.skins.empty()) return;
-    const auto& sk = skinMgr.skins[settings.skinIndex % skinMgr.skins.size()];
-    audio.loadSkinHitsounds(
-        sk.hitNormalWav,
-        sk.hitWhistleWav,
-        sk.hitFinishWav,
-        sk.hitClapWav,
-        sk.comboBreakWav,
-        sk.synthPreset,
-        sk.nightcoreKickWav,
-        sk.nightcoreClapWav,
-        sk.nightcoreHatWav
-    );
+    int activeIdx = settings.skinIndex % static_cast<int>(skinMgr.skins.size());
+    const auto& sk = skinMgr.skins[activeIdx];
+    bool skinChanged = (loadedSkinIndex != activeIdx);
+
+    if (skinChanged || customHitsoundsActive) {
+        audio.loadSkinHitsounds(
+            sk.hitNormalWav,
+            sk.hitWhistleWav,
+            sk.hitFinishWav,
+            sk.hitClapWav,
+            sk.comboBreakWav,
+            sk.synthPreset,
+            sk.nightcoreKickWav,
+            sk.nightcoreClapWav,
+            sk.nightcoreHatWav
+        );
+        customHitsoundsActive = false;
+    }
+
+    if (!skinChanged) return;
+    loadedSkinIndex = activeIdx;
 
     // osu!standard
     if (!sk.cursorPng.empty())           texSkinCursor.loadFromFile(sk.cursorPng, 64, 64);
@@ -362,7 +385,18 @@ void AppContext::updateSongPreview() {
         audio.stopMusic();
         return;
     }
-    const std::string& audioPath = curDiff.audioPath;
+    std::string audioPath = curDiff.audioPath;
+    if (audioPath.empty() || (audioPath == "romfs:/audio.mp3" && curSet.folderPath != "romfs:/")) {
+        for (const auto& d : curSet.difficulties) {
+            if (!d.audioPath.empty() && d.audioPath != "romfs:/audio.mp3") {
+                audioPath = d.audioPath;
+                break;
+            }
+        }
+        if ((audioPath.empty() || audioPath == "romfs:/audio.mp3") && !curSet.folderPath.empty() && curSet.folderPath != "romfs:/") {
+            audioPath = Beatmap::resolveAudioPath(curSet.folderPath, "audio.mp3");
+        }
+    }
     float speedRate = getModsSpeedMultiplier(settings.activeMods);
     bool shouldLoop = (appState == STATE_SONG_SELECT);
     int startOff = (curDiff.previewTimeMs > 0) ? curDiff.previewTimeMs : 0;
@@ -500,7 +534,15 @@ bool AppContext::startSelectedBeatmap() {
     const auto& diffEntry = curSet.difficulties[selectedDiff];
 
     // Preparar datos para la pantalla de transición y carga escalonada estilo osu!lazer
-    bgLoader.cancel();
+    std::string targetBgPath = !diffEntry.backgroundPath.empty() ? diffEntry.backgroundPath : curSet.backgroundPath;
+    if (!targetBgPath.empty()) {
+        if (!(bgTex.loaded && bgTex.sourcePath == targetBgPath)) {
+            bgLoader.request(targetBgPath, bgMaxW, bgMaxH);
+        }
+    } else {
+        bgLoader.cancel();
+        bgTex.unload();
+    }
     previewDelay = 0;
     videoPlayer.closeVideo();
     audio.stopMusic();
@@ -523,8 +565,9 @@ bool AppContext::startSelectedBeatmap() {
 
     inSongIntro        = true;
     songIntroTick      = 0;
+    songOutroTick      = 0;
     songIntroLoadStage = 0;
-    songIntroLeadInMs  = 1600;
+    songIntroLeadInMs  = 1100;
 
     if (!isReplayPlaying) {
         currentReplay.clear();
@@ -646,6 +689,8 @@ std::string AppContext::findLocalMapFile(const std::string& folder, const std::s
 
     // 1. Probar rutas alternativas estándar directas y en subcarpetas
     const char* testDirs[] = {
+        "sdmc:/3ds/circl3ds/songs/",
+        "sdmc:/circl3ds/songs/",
         "sdmc:/3ds/osu-3ds/songs/",
         "sdmc:/osu-3ds/songs/",
         "sdmc:/3ds/osu/Songs/",

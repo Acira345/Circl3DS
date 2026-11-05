@@ -76,7 +76,7 @@ void runMultiResultsScreen(AppContext& ctx) {
 
         // Cabecera lazer
         Ui::slantRectGrad(8.0f + dTop, 3.5f, 78.0f, 19.0f, -4.0f, 0.25f, Ui::rgba(255, 42, 133), Ui::rgba(215, 25, 105));
-        drawCenteredTextWithShadow(ctx.textBuf, 47.0f + dTop, 13.0f, 0.34f, ctx.clrWhite, "osu!3DS", 0.30f);
+        drawCenteredTextWithShadow(ctx.textBuf, 47.0f + dTop, 13.0f, 0.34f, ctx.clrWhite, "Circl3DS", 0.30f);
 
         drawTextWithShadow(ctx.textBuf, 94.0f + dTop, 6.0f, 0.38f, Ui::rgba(0, 229, 255), LOC(STR_MULTI_RESULTS_HEADER), 0.30f);
 

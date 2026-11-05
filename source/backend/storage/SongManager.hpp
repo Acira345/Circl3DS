@@ -141,27 +141,27 @@ public:
         sets.clear();
         extractedOszCount = 0;
 
-        if (progressFn) progressFn(progressUserData, "Verificando paquetes...", 0, 0);
+        if (progressFn) progressFn(progressUserData, LOC(STR_SPLASH_CHECKING_PKGS), 0, 0);
 
         // 1. Crear carpetas estándar en la tarjeta SD
-        OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/osu-3ds/songs");
+        OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/circl3ds/songs");
 
         // 2. Descomprimir automáticamente cualquier .osz colocado en las carpetas de la SD
         extractedOszCount += OszExtractor::extractAllPendingOsz(
-            "sdmc:/3ds/osu-3ds/songs", "sdmc:/3ds/osu-3ds/songs"
+            "sdmc:/3ds/circl3ds/songs", "sdmc:/3ds/circl3ds/songs"
         );
         extractedOszCount += OszExtractor::extractAllPendingOsz(
-            "sdmc:/3ds/osu-3ds", "sdmc:/3ds/osu-3ds/songs"
+            "sdmc:/3ds/circl3ds", "sdmc:/3ds/circl3ds/songs"
         );
         extractedOszCount += OszExtractor::extractAllPendingOsz(
-            "sdmc:/osu-3ds/songs", "sdmc:/3ds/osu-3ds/songs"
+            "sdmc:/3ds/osu-3ds/songs", "sdmc:/3ds/circl3ds/songs"
         );
 
-        if (progressFn) progressFn(progressUserData, "Cargando cache de canciones...", 0, 0);
+        if (progressFn) progressFn(progressUserData, LOC(STR_SPLASH_LOADING_CACHE), 0, 0);
 
         // 3. Cargar caché binaria para acelerar el inicio
         std::unordered_map<std::string, CachedBeatmap> cacheMap;
-        const std::string cachePath = "sdmc:/3ds/osu-3ds/songs.cache";
+        const std::string cachePath = "sdmc:/3ds/circl3ds/songs.cache";
         loadCache(cachePath, cacheMap);
 
         bool cacheDirty = false;
@@ -172,32 +172,39 @@ public:
             activeFiles[fullPath] = true;
             scannedCount++;
 
-            struct stat st;
-            bool statOk = (stat(fullPath.c_str(), &st) == 0);
-            int64_t fSize = statOk ? static_cast<int64_t>(st.st_size) : 0;
-            int64_t mTime = statOk ? static_cast<int64_t>(st.st_mtime) : 0;
-
+            // Vía rápida: si la ruta ya está en la caché binaria, evitar llamadas lentas a stat() en cada .osu de la SD
             auto it = cacheMap.find(fullPath);
-            if (it != cacheMap.end() && it->second.fileSize == fSize && it->second.mtime == mTime) {
+            if (it != cacheMap.end() && (it->second.fileSize > 0 || isRomfs)) {
                 addCachedBeatmapToSets(it->second);
             } else {
-                CachedBeatmap newItem;
-                newItem.fileSize = fSize;
-                newItem.mtime = mTime;
-                if (addOsuFileToSets(fullPath, isRomfs, &newItem)) {
-                    cacheMap[fullPath] = newItem;
-                    cacheDirty = true;
+                struct stat st;
+                bool statOk = (stat(fullPath.c_str(), &st) == 0);
+                int64_t fSize = statOk ? static_cast<int64_t>(st.st_size) : 0;
+                int64_t mTime = statOk ? static_cast<int64_t>(st.st_mtime) : 0;
+
+                if (it != cacheMap.end() && it->second.fileSize == fSize && it->second.mtime == mTime) {
+                    addCachedBeatmapToSets(it->second);
+                } else {
+                    CachedBeatmap newItem;
+                    newItem.fileSize = fSize;
+                    newItem.mtime = mTime;
+                    if (addOsuFileToSets(fullPath, isRomfs, &newItem)) {
+                        cacheMap[fullPath] = newItem;
+                        cacheDirty = true;
+                    }
                 }
             }
 
-            if (progressFn && (scannedCount % 3 == 0 || allSets.size() > 0)) {
-                progressFn(progressUserData, "Indexando canciones...", static_cast<int>(allSets.size()), scannedCount);
+            if (progressFn && (scannedCount % 12 == 0 || scannedCount == 1)) {
+                progressFn(progressUserData, LOC(STR_SPLASH_INDEXING), static_cast<int>(allSets.size()), scannedCount);
             }
         };
 
-        if (progressFn) progressFn(progressUserData, "Escaneando biblioteca...", 0, 0);
+        if (progressFn) progressFn(progressUserData, LOC(STR_SPLASH_SCANNING), 0, 0);
 
         // 4. Escanear carpetas en la SD y en RomFS
+        scanDirectoryTree("sdmc:/3ds/circl3ds/songs/", false, fileScanner);
+        scanDirectoryTree("sdmc:/circl3ds/songs/", false, fileScanner);
         scanDirectoryTree("sdmc:/3ds/osu-3ds/songs/", false, fileScanner);
         scanDirectoryTree("sdmc:/osu-3ds/songs/", false, fileScanner);
         scanDirectoryTree("romfs:/", true, fileScanner);
@@ -215,11 +222,11 @@ public:
         }
 
         if (cacheDirty) {
-            if (progressFn) progressFn(progressUserData, "Guardando cache...", static_cast<int>(allSets.size()), scannedCount);
+            if (progressFn) progressFn(progressUserData, LOC(STR_SPLASH_SAVING_CACHE), static_cast<int>(allSets.size()), scannedCount);
             saveCache(cachePath, cacheMap);
         }
 
-        if (progressFn) progressFn(progressUserData, "Organizando biblioteca...", static_cast<int>(allSets.size()), scannedCount);
+        if (progressFn) progressFn(progressUserData, LOC(STR_SPLASH_ORGANIZING), static_cast<int>(allSets.size()), scannedCount);
 
         // 6. Ordenar dificultades de cada canción por Estrellas (★)
         for (auto& set : allSets) {
@@ -232,7 +239,7 @@ public:
 
         applySortAndFilter(scoreMgr);
 
-        if (progressFn) progressFn(progressUserData, "Listo!", static_cast<int>(allSets.size()), scannedCount);
+        if (progressFn) progressFn(progressUserData, LOC(STR_READY), static_cast<int>(allSets.size()), scannedCount);
     }
 
     bool deleteSet(size_t setIndex, const ScoreManager* scoreMgr = nullptr) {
@@ -659,7 +666,7 @@ private:
             std::string fullPath = rootFolder + name;
             if (hasOsuExtension(name)) {
                 cb(fullPath, isRomfs);
-            } else {
+            } else if (entry->d_type != DT_REG) {
                 DIR* sub = opendir(fullPath.c_str());
                 if (sub) {
                     struct dirent* subEntry;

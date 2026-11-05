@@ -31,7 +31,7 @@ include $(DEVKITARM)/3ds_rules
 #     - icon.png
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
-TARGET := osu-3ds
+TARGET := circl3ds
 BUILD		:=	build
 SOURCES		:=	source \
 			source/app \
@@ -39,6 +39,7 @@ SOURCES		:=	source \
 			source/backend/storage \
 			source/backend/net \
 			source/backend/i18n \
+			source/backend/profile \
 			source/frontend/render \
 			source/frontend/screens \
 			source/game/core \
@@ -57,8 +58,8 @@ GRAPHICS	:=	gfx
 ROMFS		:=	romfs
 GFXBUILD	:=	$(ROMFS)/gfx
 
-APP_TITLE       := osu! 3DS
-APP_DESCRIPTION := Rhythm is just a click away!
+APP_TITLE       := Circl3DS
+APP_DESCRIPTION := Rhythm is just a tap away!
 APP_AUTHOR      := Acira345
 ICON            := $(ASSETS)/icon.png
 

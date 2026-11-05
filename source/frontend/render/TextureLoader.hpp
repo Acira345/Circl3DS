@@ -62,7 +62,31 @@ struct LoadedTexture {
     static bool decode(const std::string& path, int maxW, int maxH, Decoded& out) {
         out = Decoded();
         int srcW = 0, srcH = 0, channels = 0;
-        unsigned char* pixels = stbi_load(path.c_str(), &srcW, &srcH, &channels, 4);
+        unsigned char* pixels = nullptr;
+
+        // Leer la imagen completa en un solo bloque desde sdmc:/romfs: para evitar cientos de lecturas pequeñas en la SD
+        FILE* f = std::fopen(path.c_str(), "rb");
+        if (f) {
+            if (std::fseek(f, 0, SEEK_END) == 0) {
+                long fsz = std::ftell(f);
+                if (fsz > 0 && fsz <= 12 * 1024 * 1024 && std::fseek(f, 0, SEEK_SET) == 0) {
+                    unsigned char* fileBuf = static_cast<unsigned char*>(std::malloc(static_cast<size_t>(fsz)));
+                    if (fileBuf) {
+                        size_t nRead = std::fread(fileBuf, 1, static_cast<size_t>(fsz), f);
+                        std::fclose(f);
+                        f = nullptr;
+                        if (nRead == static_cast<size_t>(fsz)) {
+                            pixels = stbi_load_from_memory(fileBuf, static_cast<int>(fsz), &srcW, &srcH, &channels, 4);
+                        }
+                        std::free(fileBuf);
+                    }
+                }
+            }
+            if (f) std::fclose(f);
+        }
+        if (!pixels) {
+            pixels = stbi_load(path.c_str(), &srcW, &srcH, &channels, 4);
+        }
         if (!pixels || srcW <= 0 || srcH <= 0) {
             if (pixels) stbi_image_free(pixels);
             return false;

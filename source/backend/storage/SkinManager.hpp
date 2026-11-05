@@ -9,8 +9,8 @@
 #include "OszExtractor.hpp"
 
 struct SkinProfile {
-    std::string name = "osu! Classic";
-    std::string author = "osu! 3DS";
+    std::string name = "Circl Classic";
+    std::string author = "Circl3DS";
     std::string folderPath = "";
     bool isCustomFromSD = false;
 
@@ -92,7 +92,7 @@ public:
         skins.clear();
         extractedOskCount = 0;
 
-        OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/osu-3ds/skins");
+        OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/circl3ds/skins");
 
         // Extraer cualquier archivo .osk en las carpetas de la SD
         extractedOskCount += OszExtractor::extractAllPendingOsk(
@@ -106,6 +106,7 @@ public:
         addBuiltInPresets();
 
         // 2. Escanear carpetas de Skins personalizados en sdmc:/3ds/osu-3ds/skins/
+        scanSkinsDirectory("sdmc:/3ds/circl3ds/skins/");
         scanSkinsDirectory("sdmc:/3ds/osu-3ds/skins/");
     }
 
@@ -114,7 +115,7 @@ private:
         // Preset 1: osu! Classic
         {
             SkinProfile s;
-            s.name = "osu! Classic";
+            s.name = "Circl Classic";
             s.author = "Built-in";
             s.synthPreset = 0;
             s.comboColors = {

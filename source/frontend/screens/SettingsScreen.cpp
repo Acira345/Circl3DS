@@ -42,15 +42,15 @@ void runSettingsScreen(AppContext& ctx) {
     // Tab 1 (TECLAS):   4=Acción 1, 5=Acción 2, 6=Acción 3, 7=Acción 4, 25=Restablecer Modo
     // Tab 2 (AUDIO):    8=Vol Música, 9=Vol Efectos, 10=Offset Audio, 26=Calibrador Rítmico, 11=Hitsounds Mapa, 27=Música en Menú
     // Tab 3 (JUEGO):    12=Modo Principal, 22=Idioma, 14=Sliders Serpiente, 15=Combo Bursts, 20=Mostrar 300s, 21=Descargas Multi
-    // Tab 4 (VISUAL):   13=Skin Activo, 17=Tamaño Cursor, 18=Oscurecer Fondo, 28=Marco Playfield, 19=Videos Fondo, 16=Fondo Taiko
-    const int tabItems[5][6] = {
-        { 0, 23, 24, 1, 2, 3 },
-        { 4, 5, 6, 7, 25, -1 },
-        { 8, 9, 10, 26, 11, 27 },
-        { 12, 22, 14, 15, 20, 21 },
-        { 13, 17, 18, 28, 19, 16 }
+    // Tab 4 (VISUAL):   13=Skin Activo, 17=Tamaño Cursor, 18=Oscurecer Fondo, 29=Contador FPS, 28=Marco Playfield, 19=Videos Fondo, 16=Fondo Taiko
+    const int tabItems[5][7] = {
+        { 0, 23, 24, 1, 2, 3, -1 },
+        { 4, 5, 6, 7, 25, -1, -1 },
+        { 8, 9, 10, 26, 11, 27, -1 },
+        { 12, 22, 14, 15, 20, 21, -1 },
+        { 13, 17, 18, 29, 28, 19, 16 }
     };
-    const int tabItemCounts[5] = { 6, 5, 6, 6, 6 };
+    const int tabItemCounts[5] = { 6, 5, 6, 6, 7 };
 
     auto getTabForOption = [&](int opt) -> int {
         for (int t = 0; t < 5; ++t) {
@@ -476,6 +476,10 @@ void runSettingsScreen(AppContext& ctx) {
                         ctx.settings.bgDim += (stepDir != 0 ? stepDir : 1) * 5;
                         ctx.audio.playHitSound(0);
                         break;
+                    case 29: // Contador de FPS estilo osu!
+                        ctx.settings.showFps = !ctx.settings.showFps;
+                        ctx.audio.playHitSound(0);
+                        break;
                     case 28: // Marco del Área de Juego (Safe Area Border)
                         ctx.settings.showPlayfieldBorder = !ctx.settings.showPlayfieldBorder;
                         ctx.audio.playHitSound(0);
@@ -689,11 +693,11 @@ void runSettingsScreen(AppContext& ctx) {
     bool esp = isEsp();
 
     const char* tabShortNames[5] = {
-        esp ? "PANTALLA" : "SCREEN",
-        esp ? "TECLAS"   : "KEYS",
-        "AUDIO",
-        esp ? "JUEGO"    : "GAME",
-        "VISUAL"
+        LOC(STR_SET_TAB_SCREEN),
+        LOC(STR_SET_TAB_KEYS),
+        LOC(STR_SET_TAB_AUDIO),
+        LOC(STR_SET_TAB_GAME),
+        LOC(STR_SET_TAB_VISUAL)
     };
     const char* tabSubtitles[5] = {
         esp ? "Pantalla de Juego y Área Táctil"        : "Gameplay Screen & Touch Area",
@@ -828,7 +832,7 @@ void runSettingsScreen(AppContext& ctx) {
                 outTitle = LOC(STR_SET_SNAKING);
                 outSub   = LOC(STR_SET_SNAKING_DESC);
                 outVal   = ctx.settings.snakingSliders ? LOC(STR_ON) : LOC(STR_OFF);
-                outDetail1 = esp ? "Los sliders se despliegan suavemente desde su inicio estilo osu!lazer." : "Sliders smoothly snake out from their start point like osu!lazer.";
+                outDetail1 = esp ? "Los sliders se despliegan suavemente desde su inicio con animación fluida." : "Sliders smoothly snake out from their start point.";
                 outDetail2 = esp ? "Desactivarlo dibuja el cuerpo del slider estático desde el primer instante." : "Disabling draws the full slider body statically right away.";
                 break;
             case 15:
@@ -857,7 +861,7 @@ void runSettingsScreen(AppContext& ctx) {
                 std::snprintf(buf, sizeof(buf), "%s (%d/%d)", truncateString(activeSkin.name, 16).c_str(), ctx.settings.skinIndex + 1, std::max(1, (int)ctx.skinMgr.skins.size()));
                 outSub   = esp ? "Aspecto de círculos, cursor, colores y sonidos" : "Hitcircle textures, cursor, colors & sounds";
                 outVal   = truncateString(activeSkin.name, 14);
-                outDetail1 = esp ? "Cambia entre los temas incluidos y tus propios skins en /3ds/osu-3ds/skins/." : "Switch between built-in themes and custom skins in /3ds/osu-3ds/skins/.";
+                outDetail1 = esp ? "Cambia entre los temas incluidos y tus propios skins en /3ds/circl3ds/skins/." : "Switch between built-in themes and custom skins in /3ds/circl3ds/skins/.";
                 outDetail2 = buf;
                 break;
             case 17:
@@ -875,6 +879,13 @@ void runSettingsScreen(AppContext& ctx) {
                 outVal   = buf;
                 outDetail1 = esp ? "Un valor alto (75%-95%) hace que los círculos y el AR destaquen con claridad." : "Higher dim (75%-95%) makes hit circles stand out clearly.";
                 outDetail2 = esp ? "El panel izquierdo superior muestra el oscurecimiento exacto en vivo." : "The top-left panel previews the exact background dim in real time.";
+                break;
+            case 29:
+                outTitle = LOC(STR_SET_SHOW_FPS);
+                outSub   = LOC(STR_SET_SHOW_FPS_DESC);
+                outVal   = ctx.settings.showFps ? LOC(STR_ON) : LOC(STR_OFF);
+                outDetail1 = LOC(STR_SET_SHOW_FPS_DET1);
+                outDetail2 = LOC(STR_SET_SHOW_FPS_DET2);
                 break;
             case 28:
                 outTitle = esp ? "Marco del Área de Juego" : "Playfield Safe Border";
@@ -936,7 +947,9 @@ void runSettingsScreen(AppContext& ctx) {
 
         // Subtítulo central y estado de hardware a la derecha
         drawTextWithShadow(ctx.textBuf, 118.0f, 8.0f, 0.36f, ctx.clrWhite, tabSubtitles[activeTab], 0.34f);
-        drawTextWithShadow(ctx.textBuf, 308.0f, 8.5f, 0.31f, Ui::rgba(45, 235, 160), "60 FPS", 0.34f);
+        char fpsTopBuf[16];
+        std::snprintf(fpsTopBuf, sizeof(fpsTopBuf), "%d FPS", static_cast<int>(std::round(ctx.currentFps)));
+        drawTextWithShadow(ctx.textBuf, 308.0f, 8.5f, 0.31f, Ui::rgba(45, 235, 160), fpsTopBuf, 0.34f);
         drawTextWithShadow(ctx.textBuf, 350.0f, 8.5f, 0.31f, Ui::rgba(80, 200, 255), ctx.isNew3DS ? "N3DS" : "PICA200", 0.34f);
 
         float dPanel = depthShift(1.6f);
@@ -1035,7 +1048,7 @@ void runSettingsScreen(AppContext& ctx) {
             drawTextWithShadow(ctx.textBuf, panR_X + 10.0f, panY + 7.0f, 0.32f, Ui::rgba(55, 225, 200),
                 esp ? "MAPEO HARDWARE NINTENDO 3DS" : "NINTENDO 3DS HID MAPPING", 0.18f);
 
-            const char* modeLabels[4] = { "osu!standard", "osu!taiko", "osu!catch", "osu!mania 4K" };
+            const char* modeLabels[4] = { "Standard", "Taiko", "Catch", "Mania 4K" };
             int selRow = std::max(0, std::min(3, ctx.settingsOption - 4));
             uint32_t selMask = ctx.settings.keyOsuK1;
             if (ctx.settingsControlsMode == MODE_STD) {
@@ -1140,7 +1153,7 @@ void runSettingsScreen(AppContext& ctx) {
                 Ui::glow(cx, cy, 0.18f, r + 8.0f, Ui::rgba(255, 65, 150, 110), 3);
                 C2D_DrawCircleSolid(cx, cy, 0.20f, r, Ui::rgba(255, 65, 150));
                 drawRing(cx, cy, r, 2.0f, ctx.clrWhite, 24, 0.21f);
-                drawCenteredTextWithShadow(ctx.textBuf, cx, cy - 5.0f, 0.34f, ctx.clrWhite, "osu!", 0.22f);
+                drawCenteredTextWithShadow(ctx.textBuf, cx, cy - 5.0f, 0.34f, ctx.clrWhite, "Circl", 0.22f);
 
                 // Escala visual de Offset (-150 ms .. 0 .. +150 ms)
                 float barX = boxX + 14.0f, barY = boxY + 86.0f, barW = boxW - 28.0f;
@@ -1281,6 +1294,9 @@ void runSettingsScreen(AppContext& ctx) {
         drawTextWithShadow(ctx.textBuf, 198.0f, 220.0f, 0.32f, Ui::rgba(225, 220, 245), esp ? "Centrar Área" : "Reset Area", 0.34f);
 
         drawRightAlignedText(ctx.textBuf, 392.0f, 220.0f, 0.31f, Ui::rgba(135, 130, 165), "400x240 (5:3)", 0.34f);
+        if (ctx.settings.showFps) {
+            Ui::drawFpsCounter(400.0f, 240.0f, ctx.currentFps, ctx.currentFrameMs, ctx.textBuf, depthShift(1.5f));
+        }
         Ui::drawTransition(400.0f, 240.0f, ctx.screenFade, ctx.clrPrimary);
     }
 
@@ -1435,13 +1451,14 @@ void runSettingsScreen(AppContext& ctx) {
 
                     drawRightAlignedText(ctx.textBuf, cx + cw - 10.0f, cy + 5.0f, 0.31f, Ui::rgba(65, 220, 255), mVal.c_str(), 0.19f);
                     Ui::sliderBar(cx + 174.0f, cy + 21.0f, 110.0f, 9.0f, 0.19f, ratio, sel ? Ui::rgba(255, 65, 150) : Ui::rgba(65, 195, 255), sel);
-                } else if (opt == 11 || opt == 27 || opt == 14 || opt == 15 || opt == 20 || opt == 28 || opt == 19) {
+                } else if (opt == 11 || opt == 27 || opt == 14 || opt == 15 || opt == 20 || opt == 29 || opt == 28 || opt == 19) {
                     bool isOn = false;
                     if (opt == 11) isOn = ctx.settings.beatmapHitsounds;
                     else if (opt == 27) isOn = ctx.settings.songPreview;
                     else if (opt == 14) isOn = ctx.settings.snakingSliders;
                     else if (opt == 15) isOn = ctx.settings.comboBursts;
                     else if (opt == 20) isOn = ctx.settings.showHit300;
+                    else if (opt == 29) isOn = ctx.settings.showFps;
                     else if (opt == 28) isOn = ctx.settings.showPlayfieldBorder;
                     else if (opt == 19) isOn = ctx.settings.enableVideo;
                     Ui::toggleSwitch(cx + cw - 58.0f, cy + 10.0f, 48.0f, 18.0f, 0.19f, isOn, Ui::rgba(45, 225, 150));

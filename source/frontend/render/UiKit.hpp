@@ -176,22 +176,22 @@ inline void lazerHeader(float w, float z, const char* title, const char* rightTa
     C2D_DrawRectSolid(0.0f, 0.0f, z, w, h, rgba(14, 9, 24, 235));
     C2D_DrawRectSolid(0.0f, h - 1.0f, z + 0.005f, w, 1.0f, withAlpha(accentClr, 90));
 
-    // Pastilla rosa [osu!] a la izquierda
-    pill(10.0f, 4.0f, 34.0f, 16.0f, z + 0.01f, accentClr);
+    // Pastilla Circl3DS a la izquierda
+    pill(10.0f, 4.0f, 38.0f, 16.0f, z + 0.01f, accentClr);
     if (textBuf) {
         C2D_Text t;
-        C2D_TextParse(&t, textBuf, "osu!");
+        C2D_TextParse(&t, textBuf, "Circl");
         C2D_TextOptimize(&t);
         float tw = 0.0f, th = 0.0f;
-        C2D_TextGetDimensions(&t, 0.36f, 0.36f, &tw, &th);
-        C2D_DrawText(&t, C2D_WithColor, 27.0f - tw * 0.5f, 12.0f - th * 0.5f, z + 0.02f, 0.36f, 0.36f, rgba(255, 255, 255));
+        C2D_TextGetDimensions(&t, 0.34f, 0.34f, &tw, &th);
+        C2D_DrawText(&t, C2D_WithColor, 29.0f - tw * 0.5f, 12.0f - th * 0.5f, z + 0.02f, 0.34f, 0.34f, rgba(255, 255, 255));
 
         // Titulo junto a la pastilla
         if (title && title[0]) {
             C2D_Text tTitle;
             C2D_TextParse(&tTitle, textBuf, title);
             C2D_TextOptimize(&tTitle);
-            C2D_DrawText(&tTitle, C2D_WithColor, 50.0f, 5.5f, z + 0.02f, 0.40f, 0.40f, rgba(255, 255, 255));
+            C2D_DrawText(&tTitle, C2D_WithColor, 54.0f, 5.5f, z + 0.02f, 0.40f, 0.40f, rgba(255, 255, 255));
         }
 
         // Indicador derecho: Punto verde "Conectado" + separador + rightTag ("60 FPS")
@@ -441,6 +441,55 @@ inline void diffBadge(float x, float y, float stars, const char* name, C2D_TextB
         C2D_TextOptimize(&tS);
         C2D_DrawText(&tS, C2D_WithColor, x + 5.0f, y + 10.5f, z + 0.02f, 0.28f, 0.28f, active ? rgba(46, 213, 115) : rgba(255, 195, 40));
     }
+}
+
+// Contador de FPS y frametime (ms) en la esquina inferior derecha al estilo osu!
+inline void drawFpsCounter(float screenW, float screenH, float fps, float frameMs, C2D_TextBuf textBuf, float dShift = 0.0f, float z = 0.92f) {
+    if (!textBuf) return;
+
+    int fpsInt = std::max(1, std::min(999, static_cast<int>(std::round(fps))));
+    float msClamped = std::max(0.1f, std::min(99.9f, frameMs));
+
+    u32 fpsClr = (fps >= 54.5f) ? rgba(130, 225, 55, 235)
+               : (fps >= 40.0f) ? rgba(250, 190, 40, 235)
+                                : rgba(245, 65, 70, 235);
+    u32 msClr  = (msClamped <= 18.5f) ? rgba(130, 225, 55, 235)
+               : (msClamped <= 25.0f) ? rgba(250, 190, 40, 235)
+                                      : rgba(245, 65, 70, 235);
+
+    const float boxW = 42.0f;
+    const float rowH = 10.0f;
+    const float gapY = 1.5f;
+    const float totalH = rowH * 2.0f + gapY;
+    const float bx = screenW - boxW - 4.0f + dShift;
+    const float by = screenH - totalH - 3.0f;
+
+    // Fila 1: FPS
+    C2D_DrawRectSolid(bx, by, z, boxW, rowH, rgba(12, 10, 20, 210));
+    C2D_DrawRectSolid(bx + boxW - 2.5f, by, z + 0.005f, 2.5f, rowH, fpsClr);
+
+    // Fila 2: Frame time (ms)
+    const float by2 = by + rowH + gapY;
+    C2D_DrawRectSolid(bx, by2, z, boxW, rowH, rgba(12, 10, 20, 210));
+    C2D_DrawRectSolid(bx + boxW - 2.5f, by2, z + 0.005f, 2.5f, rowH, msClr);
+
+    char fpsBuf[20];
+    std::snprintf(fpsBuf, sizeof(fpsBuf), "%dfps", fpsInt);
+    C2D_Text tFps;
+    C2D_TextParse(&tFps, textBuf, fpsBuf);
+    C2D_TextOptimize(&tFps);
+    float tw1 = 0.0f, th1 = 0.0f;
+    C2D_TextGetDimensions(&tFps, 0.31f, 0.31f, &tw1, &th1);
+    C2D_DrawText(&tFps, C2D_WithColor, bx + boxW - 5.0f - tw1, by + 0.5f, z + 0.01f, 0.31f, 0.31f, fpsClr);
+
+    char msBuf[20];
+    std::snprintf(msBuf, sizeof(msBuf), "%.1fms", msClamped);
+    C2D_Text tMs;
+    C2D_TextParse(&tMs, textBuf, msBuf);
+    C2D_TextOptimize(&tMs);
+    float tw2 = 0.0f, th2 = 0.0f;
+    C2D_TextGetDimensions(&tMs, 0.30f, 0.30f, &tw2, &th2);
+    C2D_DrawText(&tMs, C2D_WithColor, bx + boxW - 5.0f - tw2, by2 + 0.5f, z + 0.01f, 0.30f, 0.30f, msClr);
 }
 
 } // namespace Ui

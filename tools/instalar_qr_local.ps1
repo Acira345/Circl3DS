@@ -5,7 +5,8 @@
 
 $port = 8090
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$ciaPath = Join-Path $repoRoot "osu-3ds.cia"
+$ciaName = if (Test-Path (Join-Path $repoRoot "circl3ds.cia")) { "circl3ds.cia" } else { "osu-3ds.cia" }
+$ciaPath = Join-Path $repoRoot $ciaName
 
 if (-not (Test-Path $ciaPath)) {
     Write-Host "Error: No se encontro osu-3ds.cia en $repoRoot" -ForegroundColor Red
@@ -27,7 +28,7 @@ $ipObj = if ($hotspotIp) {
 }
 
 $ip = if ($ipObj) { $ipObj.IPAddress } else { "127.0.0.1" }
-$ciaUrl = "http://${ip}:${port}/osu-3ds.cia"
+$ciaUrl = "http://${ip}:${port}/${ciaName}"
 $qrApiUrl = "https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=" + [uri]::EscapeDataString($ciaUrl)
 
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -101,7 +102,7 @@ try {
 
             Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Solicitud de la 3DS: $method $path" -ForegroundColor Cyan
 
-            if ($path -eq "/osu-3ds.cia" -or $path -like "*/osu-3ds.cia*") {
+            if ($path -like "*.cia*") {
                 # Recargar siempre el .cia mas reciente del disco
                 $fileBytes = [System.IO.File]::ReadAllBytes($ciaPath)
                 $fileSize = $fileBytes.Length
@@ -123,7 +124,7 @@ try {
                               "Content-Type: application/octet-stream`r`n" +
                               "Content-Length: $fileSize`r`n" +
                               "Accept-Ranges: bytes`r`n" +
-                              "Content-Disposition: attachment; filename=`"osu-3ds.cia`"`r`n" +
+                              "Content-Disposition: attachment; filename=`"${ciaName}`"`r`n" +
                               "Connection: close`r`n`r`n"
                 }
 
