@@ -343,19 +343,8 @@ void runSplashScreen(AppContext& ctx) {
         }
     }
 
-    // Arrancar la música de bienvenida o la vista previa de la canción inicial
-    std::string themePath = "romfs:/circles.mp3";
-    bool themeStarted = false;
-    FILE* fTheme = std::fopen(themePath.c_str(), "rb");
-    if (fTheme) {
-        std::fclose(fTheme);
-        themeStarted = ctx.audio.startMusic(themePath, 0, 1.0f, 0);
-        if (themeStarted) {
-            ctx.audio.setLoop(false);
-        }
-    }
-
-    if (!themeStarted && !ctx.songMgr.sets.empty()) {
+    // Reproducir directamente la cancion inicial al azar
+    if (!ctx.songMgr.sets.empty()) {
         ctx.updateSongPreview();
     }
 

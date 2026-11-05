@@ -410,9 +410,9 @@ void AppContext::updateSongPreview() {
 void AppContext::rotateMenuSong() {
     if (!settings.songPreview) return;
     if (songMgr.sets.empty()) {
-        std::string themePath = "romfs:/circles.mp3";
-        audio.startMusic(themePath, 0, 1.0f, 0);
-        audio.setLoop(false);
+        audio.stopMusic();
+
+
         bgLoader.cancel();
         bgTex.unload();
         return;
@@ -436,11 +436,11 @@ void AppContext::rotateMenuSong() {
 float AppContext::getBpmPulse() {
     float beatLen = 500.0f;
     float offset = 0.0f;
-    if (audio.getLoadedMusicPath() == "romfs:/circles.mp3") {
-        // Nekodex - Circles (175 BPM)
-        beatLen = 60000.0f / 175.0f;
-        offset = 0.0f;
-    } else if (!songMgr.sets.empty() && selectedSet >= 0 && selectedSet < static_cast<int>(songMgr.sets.size())) {
+
+
+
+
+    if (!songMgr.sets.empty() && selectedSet >= 0 && selectedSet < static_cast<int>(songMgr.sets.size())) {
         const auto& cs = songMgr.sets[selectedSet];
         if (!cs.difficulties.empty()) {
             int dIdx = std::max(0, std::min(selectedDiff, static_cast<int>(cs.difficulties.size()) - 1));
