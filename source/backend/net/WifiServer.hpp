@@ -920,7 +920,8 @@ private:
             "];"
             "for(let i=0;i<urls.length;i++){"
             "try{st.style.color='#ffe066';st.textContent='Descargando '+title+' (Espejo '+(i+1)+'/'+urls.length+')...';"
-            "const r=await fetch(urls[i]);"
+            "const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),15000);"
+            "const r=await fetch(urls[i],{signal:ctl.signal});clearTimeout(tm);"
             "if(r.ok){const b=await r.blob();if(b.size>2048){const h=new Uint8Array(await b.slice(0,2).arrayBuffer());if(h[0]===0x50&&h[1]===0x4B)return b;}}"
             "}catch(e){}}"
             "throw new Error('No se pudo descargar de los servidores');}"
@@ -1095,6 +1096,21 @@ private:
             "try{const r=await fetch('https://osu.direct/api/v2/s/'+setId);if(r.ok){const j=await r.json();if(j&&j.id)return j;}}catch(e){}"
             "return {id:setId,title:'Beatmap Set #'+setId,artist:'Enlace Directo',creator:'Beatmap'};"
             "}"
+            "async function apiSearch(q,limit){"
+            "const urls=["
+            "'https://catboy.best/api/v2/search?mode=0&limit='+limit+'&q='+encodeURIComponent(q),"
+            "'https://osu.direct/api/v2/search?mode=0&amount='+limit+'&query='+encodeURIComponent(q)"
+            "];"
+            "let lastErr=null;"
+            "for(const u of urls){"
+            "try{const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),10000);"
+            "const r=await fetch(u,{signal:ctl.signal});clearTimeout(t);"
+            "if(!r.ok){lastErr=new Error('HTTP '+r.status);continue;}"
+            "const j=await r.json();const list=Array.isArray(j)?j:(j&&Array.isArray(j.beatmapsets)?j.beatmapsets:null);"
+            "if(list)return list;}catch(e){lastErr=e;}"
+            "}"
+            "throw lastErr||new Error('Sin respuesta de los mirrors');"
+            "}"
             "async function searchMaps(){"
             "const q=document.getElementById('q').value.trim();if(!q)return;"
             "const rDiv=document.getElementById('resultsSearch');rDiv.innerHTML='<p style=\"color:#50dcff;padding:12px\">Buscando...</p>';"
@@ -1107,8 +1123,7 @@ private:
             "}else{setObj=await lookupSetById(parsed.id);}"
             "if(setObj){isDirectLinkMode=true;currentResults=[setObj];renderCurrentList('resultsSearch','batchBarSearch','batchTextSearch');return;}"
             "}"
-            "const r=await fetch('https://catboy.best/api/v2/search?mode=0&limit=25&q='+encodeURIComponent(q));"
-            "const list=await r.json();"
+            "const list=await apiSearch(q,25);"
             "if(!Array.isArray(list)||!list.length){isDirectLinkMode=false;currentResults=[];renderCurrentList('resultsSearch','batchBarSearch','batchTextSearch');rDiv.innerHTML='<p style=\"color:#aaa5c7;padding:12px\">No se encontraron mapas.</p>';return;}"
             "isDirectLinkMode=false;currentResults=list;renderCurrentList('resultsSearch','batchBarSearch','batchTextSearch');"
             "}catch(e){rDiv.innerHTML='<p style=\"color:#f04646;padding:12px\">Error al consultar API online.</p>';}"
@@ -1125,8 +1140,7 @@ private:
             "else if(cat==='game')query='game';"
             "else if(cat==='tvsize')query='tv size';"
             "try{"
-            "const r=await fetch('https://catboy.best/api/v2/search?mode=0&limit=20&q='+encodeURIComponent(query));"
-            "const list=await r.json();rDiv.innerHTML='';"
+            "const list=await apiSearch(query,20);rDiv.innerHTML='';"
             "if(!Array.isArray(list)||!list.length){rDiv.innerHTML='<p style=\"color:#aaa5c7;padding:12px\">No se pudieron cargar canciones.</p>';return;}"
             "if(batchBar){batchBar.style.display='flex';document.getElementById('batchTextExplore').textContent=list.length+' canciones en pantalla';}"
             "list.forEach(s=>renderCard(s,rDiv,false,null));"
@@ -1322,8 +1336,8 @@ public:
             u32 rawIp = hostAddr.s_addr;
             bool ipValid = (rawIp != 0 && rawIp != INADDR_NONE && (rawIp & 0xFF) != 127);
             if (!ipValid || wifiSig == 0) {
-                // No cortar una subida en curso: esperar a que termine.
-                if (state != CLIENT_RECEIVING_BODY) {
+                // No cortar una subida o envio en curso: esperar a que termine.
+                if (state != CLIENT_RECEIVING_BODY && state != CLIENT_SENDING_RESPONSE) {
                     wifiLossChecks++;
                     if (wifiLossChecks >= 3) {
                         statusText = "Wi-Fi perdido, reiniciando servidor...";

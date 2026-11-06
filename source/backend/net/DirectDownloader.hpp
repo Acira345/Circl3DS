@@ -122,6 +122,8 @@ inline bool downloadBeatmapSet(u32 setId,
     u32 contentSize = 0;
     httpcGetDownloadSizeState(&context, NULL, &contentSize);
 
+    OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/circl3ds/songs");
+
     char outOszPath[128];
     std::snprintf(outOszPath, sizeof(outOszPath), "sdmc:/3ds/circl3ds/songs/%lu_direct.osz", (unsigned long)setId);
 
