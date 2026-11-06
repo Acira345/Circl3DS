@@ -123,7 +123,7 @@ inline bool downloadBeatmapSet(u32 setId,
     httpcGetDownloadSizeState(&context, NULL, &contentSize);
 
     char outOszPath[128];
-    std::snprintf(outOszPath, sizeof(outOszPath), "/osu/songs/%lu_direct.osz", (unsigned long)setId);
+    std::snprintf(outOszPath, sizeof(outOszPath), "sdmc:/3ds/circl3ds/songs/%lu_direct.osz", (unsigned long)setId);
 
     FILE* fp = std::fopen(outOszPath, "wb");
     if (!fp) {
@@ -163,8 +163,8 @@ inline bool downloadBeatmapSet(u32 setId,
         return false;
     }
 
-    // Descomprimir automáticamente en /osu/songs/
-    int extracted = OszExtractor::extractAllPendingOsz("/osu/songs", "/osu/songs");
+    // Descomprimir automáticamente en sdmc:/3ds/circl3ds/songs/
+    int extracted = OszExtractor::extractAllPendingOsz("sdmc:/3ds/circl3ds/songs", "sdmc:/3ds/circl3ds/songs");
     if (extracted > 0) {
         char succBuf[64];
         std::snprintf(succBuf, sizeof(succBuf), LOC(STR_DIRECT_SUCCESS_FMT), (unsigned long)setId);

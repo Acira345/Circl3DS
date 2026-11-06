@@ -43,6 +43,11 @@ private:
     u64 waitCloseTick = 0;
     u64 clientConnectTick = 0;
     u64 lastBodyChunkTick = 0;
+    // Seguimiento de la IP/Wi-Fi mientras el servidor corre: la IP puede
+    // cambiar (DHCP, reconexion, suspension) y la pantalla/QR quedaban
+    // mostrando la IP vieja -> ERR_ADDRESS_UNREACHABLE en el telefono.
+    u64 lastIpCheckTick = 0;
+    int wifiLossChecks = 0;
 
     std::string uploadFileName;
     std::string uploadTempPath;
@@ -900,18 +905,18 @@ private:
             "const wantVid=document.getElementById('wantVideo').checked;"
             "const urls=wantVid?["
             "'https://catboy.best/d/'+setId,"
-            "'https://osu.direct/api/d/'+setId,"
-            "'https://api.nerinyan.moe/d/'+setId+'?noVideo=0',"
             "'https://txy1.sayobot.cn/beatmaps/download/full/'+setId,"
             "'https://dl.sayobot.cn/beatmaps/download/full/'+setId,"
-            "'https://catboy.best/d/'+setId+'n'"
+            "'https://catboy.best/d/'+setId+'n',"
+            "'https://osu.direct/api/d/'+setId,"
+            "'https://api.nerinyan.moe/d/'+setId+'?noVideo=0'"
             "]:["
             "'https://catboy.best/d/'+setId+'n',"
-            "'https://osu.direct/api/d/'+setId+'?noVideo=1',"
-            "'https://api.nerinyan.moe/d/'+setId+'?noVideo=1',"
-            "'https://catboy.best/d/'+setId,"
             "'https://txy1.sayobot.cn/beatmaps/download/novideo/'+setId,"
-            "'https://dl.sayobot.cn/beatmaps/download/novideo/'+setId"
+            "'https://dl.sayobot.cn/beatmaps/download/novideo/'+setId,"
+            "'https://catboy.best/d/'+setId,"
+            "'https://osu.direct/api/d/'+setId+'?noVideo=1',"
+            "'https://api.nerinyan.moe/d/'+setId+'?noVideo=1'"
             "];"
             "for(let i=0;i<urls.length;i++){"
             "try{st.style.color='#ffe066';st.textContent='Descargando '+title+' (Espejo '+(i+1)+'/'+urls.length+')...';"
@@ -1245,6 +1250,8 @@ public:
         serverUrl = ipStr;
         statusText = LOC(STR_WIFI_STATUS_WAIT_CLIENT);
         initState = SERVER_RUNNING;
+        lastIpCheckTick = osGetTime();
+        wifiLossChecks = 0;
         return true;
     }
 
@@ -1276,6 +1283,8 @@ public:
         serverUrl = "";
         initState = SERVER_STOPPED;
         retryTimer = 0;
+        lastIpCheckTick = 0;
+        wifiLossChecks = 0;
         statusText = "Servidor detenido";
     }
 
@@ -1301,15 +1310,40 @@ public:
             return;
         }
 
-        // Si por alguna razón la URL no se había fijado con la IP correcta, reintentar leer la IP
-        if (serverUrl.empty()) {
+        // Vigilar la IP/Wi-Fi cada segundo mientras el servidor corre.
+        // Antes solo se leia la IP al arrancar: si el router renovaba el
+        // DHCP o la 3DS se reconectaba, la pantalla y el QR seguian
+        // mostrando la IP vieja y el telefono daba ERR_ADDRESS_UNREACHABLE.
+        if (osGetTime() - lastIpCheckTick >= 1000) {
+            lastIpCheckTick = osGetTime();
+            u8 wifiSig = osGetWifiStrength();
             struct in_addr hostAddr;
             hostAddr.s_addr = gethostid();
             u32 rawIp = hostAddr.s_addr;
-            if (rawIp != 0 && rawIp != INADDR_NONE && (rawIp & 0xFF) != 127) {
+            bool ipValid = (rawIp != 0 && rawIp != INADDR_NONE && (rawIp & 0xFF) != 127);
+            if (!ipValid || wifiSig == 0) {
+                // No cortar una subida en curso: esperar a que termine.
+                if (state != CLIENT_RECEIVING_BODY) {
+                    wifiLossChecks++;
+                    if (wifiLossChecks >= 3) {
+                        statusText = "Wi-Fi perdido, reiniciando servidor...";
+                        wifiLossChecks = 0;
+                        restart();
+                        return;
+                    }
+                }
+            } else {
+                wifiLossChecks = 0;
                 char ipStr[64];
                 std::snprintf(ipStr, sizeof(ipStr), "http://%s:%d", inet_ntoa(hostAddr), SERVER_PORT);
-                serverUrl = ipStr;
+                if (serverUrl != ipStr) {
+                    serverUrl = ipStr;
+                    // Si no hay nada en curso, reflejar que estamos esperando
+                    // con la IP nueva; si se esta recibiendo, no tocar el texto.
+                    if (state != CLIENT_RECEIVING_BODY && state != CLIENT_SENDING_RESPONSE) {
+                        statusText = LOC(STR_WIFI_STATUS_WAIT_CLIENT);
+                    }
+                }
             }
         }
 
