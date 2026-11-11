@@ -47,6 +47,7 @@ void AppContext::init() {
     multiMgr.localPlayerName = sysUser;
     profileMgr.init(sysUser);
     profileMgr.refreshStats(scoreMgr, songMgr);
+    updater.init();
 
     // Detectar si la consola es New Nintendo 3DS / New 2DS XL (804 MHz Quad-Core + 256 MB RAM)
     isNew3DS = false;
@@ -132,6 +133,7 @@ void AppContext::beginFrame() {
 }
 
 void AppContext::shutdown() {
+    updater.shutdown();
     videoPlayer.shutdown();
     audio.stopAsyncLoader();
     bgLoader.stop();

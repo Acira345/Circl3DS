@@ -326,7 +326,7 @@ private:
         static const char* htmlBody =
             "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<title>Circl3DS Hub - v4.0 TurboSync</title>"
+            "<title>Circl3DS Hub - v4.1 TurboSync</title>"
             "<script src='https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js' defer></script>"
             "<style>"
             "*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}"
@@ -417,7 +417,7 @@ private:
             "<div class='brand'>"
             "<div class='brand-icon'>C3D</div>"
             "<span class='logo'>Circl3DS Hub</span>"
-            "<span class='ver'>v4.0 TurboSync ⚡</span>"
+            "<span class='ver'>v4.1 TurboSync ⚡</span>"
             "</div>"
             "<div class='status-pill'><span class='dot'></span> 3DS Conectada</div>"
             "</header>"

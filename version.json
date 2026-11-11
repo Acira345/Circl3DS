@@ -1,0 +1,8 @@
+{
+  "version": "4.1.0",
+  "version_code": 410,
+  "title": "Circl3DS v4.1.0",
+  "changelog": "Auto-actualizador integrado, mejoras de conexion Wi-Fi Hub, video de fondo y correccion de replays.",
+  "cia_url": "https://github.com/Acira345/Circl3DS/releases/download/4.1/circl3ds.cia",
+  "3dsx_url": "https://github.com/Acira345/Circl3DS/releases/download/4.1/circl3ds.3dsx"
+}

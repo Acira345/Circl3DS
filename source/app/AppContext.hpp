@@ -34,6 +34,7 @@
 #include "QrRenderer.hpp"
 #include "Draw.hpp"
 #include "ProfileManager.hpp"
+#include "AppUpdater.hpp"
 
 enum MultiPickerAction {
     PICKER_ACTION_ACTIVE = 0,
@@ -83,6 +84,7 @@ struct AppContext {
     WifiServer wifiServer;
     MultiplayerManager multiMgr;
     ProfileManager profileMgr;
+    AppUpdater updater;
 
     // Estado de Multijugador
     std::string sysUser = "Player3DS";
