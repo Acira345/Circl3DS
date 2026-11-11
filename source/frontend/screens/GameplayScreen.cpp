@@ -568,6 +568,15 @@ void runGameplayScreen(AppContext& ctx) {
 
     if (ctx.isReplayPlaying) {
         if (!ctx.currentReplay.frames.empty()) {
+            // Simular los flancos de pulsación/liberación de TODOS los
+            // fotogramas atravesados en este tick, no solo del fotograma
+            // visitado: si songTime avanza más de un fotograma en un tick
+            // (caída de FPS o salto del reloj de audio), un pulso corto
+            // de K1/K2 dentro del rango saltado seguiría registrando su
+            // tap en lugar de perderse y contar como miss. En "Aim Only"
+            // los taps son pulsos cortos de botón; en modo táctil el
+            // contacto suele durar varios fotogramas y sobrevive al salto.
+            size_t prevIndex = ctx.replayPlaybackIndex;
             while (ctx.replayPlaybackIndex + 1 < ctx.currentReplay.frames.size() &&
                    ctx.currentReplay.frames[ctx.replayPlaybackIndex + 1].timeMs <= songTime) {
                 ctx.replayPlaybackIndex++;
@@ -575,16 +584,26 @@ void runGameplayScreen(AppContext& ctx) {
             const auto& fCur = ctx.currentReplay.frames[ctx.replayPlaybackIndex];
             static uint32_t s_prevKeys = 0;
             uint32_t curKeys = fCur.keys;
-            uint32_t justDown = curKeys & ~s_prevKeys;
+            ctx.replayJustDownThisTick = 0;
+            ctx.replayJustUpThisTick = 0;
+            {
+                uint32_t runPrev = s_prevKeys;
+                for (size_t i = prevIndex + 1; i <= ctx.replayPlaybackIndex; ++i) {
+                    uint32_t fk = ctx.currentReplay.frames[i].keys;
+                    ctx.replayJustDownThisTick |= (fk & ~runPrev);
+                    ctx.replayJustUpThisTick |= (runPrev & ~fk);
+                    runPrev = fk;
+                }
+            }
             s_prevKeys = curKeys;
 
             k1Held = (curKeys & REPLAY_KEY_K1) != 0;
             k2Held = (curKeys & REPLAY_KEY_K2) != 0;
             anyHeld = (k1Held || k2Held);
-            kActionDown = ((justDown & (REPLAY_KEY_K1 | REPLAY_KEY_K2)) != 0);
+            kActionDown = ((ctx.replayJustDownThisTick & (REPLAY_KEY_K1 | REPLAY_KEY_K2)) != 0);
             ctx.isTouching = (curKeys & REPLAY_KEY_TOUCH) != 0;
-            if (justDown & REPLAY_KEY_K1) ctx.k1PressCount++;
-            if (justDown & REPLAY_KEY_K2) ctx.k2PressCount++;
+            if (ctx.replayJustDownThisTick & REPLAY_KEY_K1) ctx.k1PressCount++;
+            if (ctx.replayJustDownThisTick & REPLAY_KEY_K2) ctx.k2PressCount++;
         }
     } else if (!ctx.isPaused && !isAutoplay) {
         if (ctx.kDown & btnGroup1) ctx.k1PressCount++;
@@ -823,9 +842,9 @@ void runGameplayScreen(AppContext& ctx) {
             if (ctx.isReplayPlaying) {
                 if (!ctx.currentReplay.frames.empty()) {
                     const auto& fCur = ctx.currentReplay.frames[ctx.replayPlaybackIndex];
-                    static uint32_t s_prevTaikoKeys = 0;
-                    uint32_t justT = fCur.keys & ~s_prevTaikoKeys;
-                    s_prevTaikoKeys = fCur.keys;
+                    // Flancos ya simulados en el bloque de entrada común
+                    // (incluyen los fotogramas saltados en este tick).
+                    uint32_t justT = ctx.replayJustDownThisTick;
 
                     donDown = (justT & (REPLAY_KEY_TAIKO_DON_L | REPLAY_KEY_TAIKO_DON_R)) != 0;
                     katsuDown = (justT & (REPLAY_KEY_TAIKO_KATSU_L | REPLAY_KEY_TAIKO_KATSU_R)) != 0;
@@ -993,16 +1012,15 @@ void runGameplayScreen(AppContext& ctx) {
             if (ctx.isReplayPlaying) {
                 if (!ctx.currentReplay.frames.empty()) {
                     const auto& fCur = ctx.currentReplay.frames[ctx.replayPlaybackIndex];
-                    static uint32_t s_prevManiaKeys = 0;
+                    // Flancos ya simulados en el bloque de entrada común
+                    // (incluyen los fotogramas saltados en este tick).
                     for (int c = 0; c < 4; ++c) {
                         uint32_t mBit = (REPLAY_KEY_MANIA_0 << c);
                         bool isHeld = (fCur.keys & mBit) != 0;
-                        bool wasHeld = (s_prevManiaKeys & mBit) != 0;
-                        if (isHeld && !wasHeld) colDown[c] = true;
-                        if (!isHeld && wasHeld) colUp[c] = true;
+                        if (ctx.replayJustDownThisTick & mBit) colDown[c] = true;
+                        if (ctx.replayJustUpThisTick & mBit) colUp[c] = true;
                         ctx.maniaEngine.colPressed[c] = isHeld;
                     }
-                    s_prevManiaKeys = fCur.keys;
                 }
             } else if (isAutoplay) {
                 for (size_t i = ctx.maniaEngine.nextNoteIndex; i < ctx.maniaEngine.notes.size(); ++i) {

@@ -783,6 +783,8 @@ bool AppContext::playReplay(const ReplayData& rep) {
     currentReplay = rep;
     isReplayPlaying = true;
     replayPlaybackIndex = 0;
+    replayJustDownThisTick = 0;
+    replayJustUpThisTick = 0;
 
     // Buscar si el beatmap de la repetición está en la biblioteca actual
     bool found = false;

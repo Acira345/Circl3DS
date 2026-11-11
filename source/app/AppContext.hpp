@@ -316,6 +316,14 @@ struct AppContext {
     ReplayData currentReplay;
     bool isReplayPlaying = false;
     size_t replayPlaybackIndex = 0;
+    // Flancos de pulsación/liberación detectados en la reproducción del
+    // replay durante el tick actual, simulando TODOS los fotogramas
+    // atravesados (no solo el fotograma visitado). Si songTime salta más
+    // de un fotograma (caída de FPS o salto del reloj de audio), un pulso
+    // corto de botón dentro del rango saltado seguiría generando su
+    // flanco en lugar de perderse y contar como miss (ver GameplayScreen).
+    uint32_t replayJustDownThisTick = 0;
+    uint32_t replayJustUpThisTick = 0;
     std::string replayToastMessage = "";
     int replayToastTimer = 0;
 

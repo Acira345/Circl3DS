@@ -94,7 +94,17 @@ public:
 
         OszExtractor::ensureDirectoryRecursive("sdmc:/3ds/circl3ds/skins");
 
-        // Extraer cualquier archivo .osk en las carpetas de la SD
+        // Extraer cualquier archivo .osk en las carpetas de la SD.
+        // Incluida sdmc:/3ds/circl3ds/skins, la carpeta que se indica al
+        // usuario en Ajustes: antes solo se extraía de las rutas legacy
+        // de osu-3ds, así que un .osk copiado a mano a la carpeta nueva
+        // nunca se descomprimía y la skin no aparecía en la lista (#7).
+        extractedOskCount += OszExtractor::extractAllPendingOsk(
+            "sdmc:/3ds/circl3ds/skins", "sdmc:/3ds/circl3ds/skins"
+        );
+        extractedOskCount += OszExtractor::extractAllPendingOsk(
+            "sdmc:/3ds/circl3ds", "sdmc:/3ds/circl3ds/skins"
+        );
         extractedOskCount += OszExtractor::extractAllPendingOsk(
             "sdmc:/3ds/osu-3ds/skins", "sdmc:/3ds/osu-3ds/skins"
         );
@@ -105,7 +115,7 @@ public:
         // 1. Añadir los 4 Skins Vectoriales de 60 FPS integrados
         addBuiltInPresets();
 
-        // 2. Escanear carpetas de Skins personalizados en sdmc:/3ds/osu-3ds/skins/
+        // 2. Escanear carpetas de skins personalizados (nueva y legacy)
         scanSkinsDirectory("sdmc:/3ds/circl3ds/skins/");
         scanSkinsDirectory("sdmc:/3ds/osu-3ds/skins/");
     }
