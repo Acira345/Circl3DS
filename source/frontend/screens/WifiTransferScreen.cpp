@@ -26,8 +26,8 @@ void runWifiTransferScreen(AppContext& ctx) {
     if (triggerRescan) {
         ctx.audio.playHitSound(2);
         ctx.wifiServer.statusText = LOC(STR_WIFI_UPDATING_LIB);
-        OszExtractor::extractAllPendingOsz("/osu/songs", "/osu/songs");
-        OszExtractor::extractAllPendingOsk("/osu/skins", "/osu/skins");
+        OszExtractor::extractAllPendingOsz("sdmc:/3ds/circl3ds/songs", "sdmc:/3ds/circl3ds/songs");
+        OszExtractor::extractAllPendingOsk("sdmc:/3ds/circl3ds/skins", "sdmc:/3ds/circl3ds/skins");
         ctx.songMgr.initAndScan(&ctx.scoreMgr);
         ctx.skinMgr.initAndScan();
         ctx.selectedSet = 0;
