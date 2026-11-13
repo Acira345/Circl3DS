@@ -8,11 +8,15 @@ The game is optimized to run at a rock-solid **60 FPS** even on original (Old 3D
 
 ---
 
-### 📲 Quick Install (.CIA)
+### 📲 Quick Install (.CIA) — v4.1.0
 
-Download or transfer `circl3ds.cia` and install it via the **FBI** app on your console (`Remote Install` or SD card).
+Scan the QR code below from **FBI** on your console (`Remote Install` ➔ `Scan QR Code`) to download and install `circl3ds.cia` over Wi-Fi, or download `.cia` / `.3dsx` from [Releases v4.1.0](https://github.com/Acira345/Circl3DS/releases/tag/4.1):
 
-> *Requires Custom Firmware (Luma3DS).*
+<div align="center">
+  <img width="400" height="400" alt="Circl3DS v4.1.0 QR" src="qr/circl3ds_v4.1.png" />
+
+  <p><i>Requires an active Wi-Fi connection and Custom Firmware (Luma3DS). Includes built-in auto-updater in the main menu.</i></p>
+</div>
 
 ---
 

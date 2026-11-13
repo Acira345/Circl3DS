@@ -8,16 +8,14 @@ El juego está ultra-optimizado para funcionar a **60 FPS estables** incluso en 
 
 ---
 
-### 📲 Instalación rápida (.CIA)
+### 📲 Instalación rápida (.CIA) — v4.1.0
 
-Escanea el siguiente código QR desde la aplicación **FBI** en tu consola (`Remote Install` ➔ `Scan QR Code`) para descargar e instalar el archivo `.cia` directamente vía Wi-Fi:
+Escanea el siguiente código QR desde la aplicación **FBI** en tu consola (`Remote Install` ➔ `Scan QR Code`) para descargar e instalar directamente `circl3ds.cia` vía Wi-Fi, o descárgalo desde [Releases v4.1.0](https://github.com/Acira345/Circl3DS/releases/tag/4.1) (`.cia` y `.3dsx`):
 
 <div align="center">
-  <img width="1148" height="1148" alt="Circl3DS V1 1" src="https://github.com/user-attachments/assets/caf11eb2-5c56-48ac-97c4-492636781a1e" />
+  <img width="400" height="400" alt="Circl3DS v4.1.0 QR" src="qr/circl3ds_v4.1.png" />
 
-
-
-  <p><i>Requiere conexión Wi-Fi activa y Custom Firmware (Luma3DS).</i></p>
+  <p><i>Requiere conexión Wi-Fi activa y Custom Firmware (Luma3DS). Incluye actualizador automático integrado en el menú principal.</i></p>
 </div>
 
 ---
