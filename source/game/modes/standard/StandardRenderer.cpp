@@ -29,7 +29,8 @@ void renderPlayfieldObjects(
     auto playX = [&](float osuX, float dOffset = 0.0f) { return baseOffsetX + (osuX * SCALE_FACTOR) + ctx.shakeX + dOffset; };
     auto playY = [&](float osuY) { return baseOffsetY + (osuY * SCALE_FACTOR) + ctx.shakeY; };
     // 0. Follow Points entre notas consecutivas del mismo combo
-    for (size_t i = 0; i + 1 < ctx.beatmap.circles.size(); ++i) {
+    size_t followStart = (ctx.firstActiveObjIndex > 0) ? (ctx.firstActiveObjIndex - 1) : 0;
+    for (size_t i = followStart; i + 1 < ctx.beatmap.circles.size(); ++i) {
     const auto& a = ctx.beatmap.circles[i];
     const auto& b = ctx.beatmap.circles[i + 1];
     if (b.time - preempt > songTime) break;
@@ -60,7 +61,7 @@ static std::vector<int> visibleIndices;
 visibleIndices.clear();
 if (visibleIndices.capacity() < 32) visibleIndices.reserve(32);
 float maxPreempt = std::max(preempt, 400.0f);
-for (int i = 0; i < static_cast<int>(ctx.beatmap.circles.size()); ++i) {
+for (int i = static_cast<int>(ctx.firstActiveObjIndex); i < static_cast<int>(ctx.beatmap.circles.size()); ++i) {
     const auto& obj = ctx.beatmap.circles[i];
     if (obj.time - maxPreempt > songTime) break;
     bool visible = false;
@@ -591,11 +592,20 @@ if (isFlashlight && !ctx.inBreakPeriod && !ctx.isPaused) {
     u32 clrDarkTrans = Ui::rgba(6, 4, 12, 0);
 
     const int SEGMENTS = 24;
+    static float flCos[SEGMENTS + 1];
+    static float flSin[SEGMENTS + 1];
+    static bool flLutInit = false;
+    if (!flLutInit) {
+        for (int s = 0; s <= SEGMENTS; ++s) {
+            float a = (s * 2.0f * static_cast<float>(M_PI)) / SEGMENTS;
+            flCos[s] = std::cos(a);
+            flSin[s] = std::sin(a);
+        }
+        flLutInit = true;
+    }
     for (int s = 0; s < SEGMENTS; ++s) {
-        float a0 = (s * 2.0f * static_cast<float>(M_PI)) / SEGMENTS;
-        float a1 = ((s + 1) * 2.0f * static_cast<float>(M_PI)) / SEGMENTS;
-        float cos0 = std::cos(a0), sin0 = std::sin(a0);
-        float cos1 = std::cos(a1), sin1 = std::sin(a1);
+        float cos0 = flCos[s], sin0 = flSin[s];
+        float cos1 = flCos[s + 1], sin1 = flSin[s + 1];
 
         // Anillo de desvanecimiento suave (borde difuso del foco)
         C2D_DrawTriangle(

@@ -4,8 +4,7 @@
 
 void ModeCatch::drawCenteredText(C2D_TextBuf buf, float cx, float cy, float scale, u32 color, const char* str, float z) {
     C2D_Text text;
-    C2D_TextParse(&text, buf, str);
-    C2D_TextOptimize(&text);
+    drawCachedTextParse(&text, buf, str);
     float w = 0.0f, h = 0.0f;
     C2D_TextGetDimensions(&text, scale, scale, &w, &h);
     C2D_DrawText(&text, C2D_WithColor, cx - (w * 0.5f), cy - (h * 0.5f), z, scale, scale, color);

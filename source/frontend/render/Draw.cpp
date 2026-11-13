@@ -3,21 +3,112 @@
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
+#include <unordered_map>
+
+namespace {
+    C2D_TextBuf s_staticTextBuf = nullptr;
+    size_t s_staticGlyphCount = 0;
+    std::unordered_map<std::string, C2D_Text> s_staticTextMap;
+    std::unordered_map<std::string, C2D_Text> s_frameTextMap;
+    C2D_TextBuf s_lastFrameBuf = nullptr;
+}
+
+void resetDrawFrameTextCache() {
+    s_frameTextMap.clear();
+}
+
+void clearDrawStaticTextCache() {
+    s_frameTextMap.clear();
+    s_staticTextMap.clear();
+    if (s_staticTextBuf) {
+        C2D_TextBufClear(s_staticTextBuf);
+    }
+    s_staticGlyphCount = 0;
+}
+
+void shutdownDrawTextCache() {
+    s_frameTextMap.clear();
+    s_staticTextMap.clear();
+    if (s_staticTextBuf) {
+        C2D_TextBufDelete(s_staticTextBuf);
+        s_staticTextBuf = nullptr;
+    }
+    s_staticGlyphCount = 0;
+}
+
+void drawCachedTextParse(C2D_Text* outText, C2D_TextBuf buf, const char* str) {
+    if (!outText) return;
+    const char* safeStr = str ? str : "";
+    size_t len = std::strlen(safeStr);
+
+    // 1. Caché estática entre fotogramas para etiquetas repetidas y números de combo cortos
+    if (len > 0 && len <= 24) {
+        auto it = s_staticTextMap.find(safeStr);
+        if (it != s_staticTextMap.end()) {
+            *outText = it->second;
+            return;
+        }
+        if (!s_staticTextBuf) {
+            s_staticTextBuf = C2D_TextBufNew(2048);
+        }
+        if (s_staticTextBuf && s_staticTextMap.size() < 160 && (s_staticGlyphCount + len + 4) < 1900) {
+            C2D_Text t;
+            C2D_TextParse(&t, s_staticTextBuf, safeStr);
+            C2D_TextOptimize(&t);
+            s_staticTextMap.emplace(safeStr, t);
+            s_staticGlyphCount += len;
+            *outText = t;
+            return;
+        }
+    }
+
+    // 2. Caché por fotograma (evita re-parsear el mismo HUD dos veces en modo 3D estereoscópico)
+    if (buf) {
+        if (s_lastFrameBuf != buf) {
+            s_frameTextMap.clear();
+            s_lastFrameBuf = buf;
+        }
+        if (len > 0 && len <= 96 && s_frameTextMap.size() < 96) {
+            auto fit = s_frameTextMap.find(safeStr);
+            if (fit != s_frameTextMap.end()) {
+                *outText = fit->second;
+                return;
+            }
+            C2D_Text t;
+            C2D_TextParse(&t, buf, safeStr);
+            C2D_TextOptimize(&t);
+            s_frameTextMap.emplace(safeStr, t);
+            *outText = t;
+            return;
+        }
+    }
+
+    C2D_TextParse(outText, buf, safeStr);
+    C2D_TextOptimize(outText);
+}
 
 void drawRingZ(float x, float y, float z, float radius, float thickness, u32 color, int segments) {
     if (radius < 0.5f) return;
     int segs = std::max(12, std::min(segments, 36));
     const float step = (2.0f * static_cast<float>(M_PI)) / segs;
+    const float cosS = std::cos(step);
+    const float sinS = std::sin(step);
+    float ux = 1.0f;
+    float uy = 0.0f;
     float prevX = x + radius;
     float prevY = y;
-    for (int i = 1; i <= segs; ++i) {
-        float a = i * step;
-        float curX = x + std::cos(a) * radius;
-        float curY = y + std::sin(a) * radius;
+    for (int i = 1; i < segs; ++i) {
+        float nx = ux * cosS - uy * sinS;
+        float ny = ux * sinS + uy * cosS;
+        ux = nx;
+        uy = ny;
+        float curX = x + ux * radius;
+        float curY = y + uy * radius;
         C2D_DrawLine(prevX, prevY, color, curX, curY, color, thickness, z);
         prevX = curX;
         prevY = curY;
     }
+    C2D_DrawLine(prevX, prevY, color, x + radius, y, color, thickness, z);
 }
 
 void drawRing(float x, float y, float radius, float thickness, u32 color, int segments, float z) {
@@ -33,8 +124,7 @@ void drawRectOutline(float x, float y, float w, float h, float thickness, u32 co
 
 void drawText(C2D_TextBuf buf, float x, float y, float scale, u32 color, const char* str, float z) {
     C2D_Text text;
-    C2D_TextParse(&text, buf, str);
-    C2D_TextOptimize(&text);
+    drawCachedTextParse(&text, buf, str);
     float rx = std::round(x);
     float ry = std::round(y);
     C2D_DrawText(&text, C2D_WithColor, rx, ry, z, scale, scale, color);
@@ -42,8 +132,7 @@ void drawText(C2D_TextBuf buf, float x, float y, float scale, u32 color, const c
 
 void drawCenteredText(C2D_TextBuf buf, float cx, float cy, float scale, u32 color, const char* str, float z) {
     C2D_Text text;
-    C2D_TextParse(&text, buf, str);
-    C2D_TextOptimize(&text);
+    drawCachedTextParse(&text, buf, str);
     float w = 0.0f, h = 0.0f;
     C2D_TextGetDimensions(&text, scale, scale, &w, &h);
     float rx = std::round(cx - (w * 0.5f));
@@ -53,8 +142,7 @@ void drawCenteredText(C2D_TextBuf buf, float cx, float cy, float scale, u32 colo
 
 void drawTextWithShadow(C2D_TextBuf buf, float x, float y, float scale, u32 color, const char* str, float z, u32 shadowColor) {
     C2D_Text text;
-    C2D_TextParse(&text, buf, str);
-    C2D_TextOptimize(&text);
+    drawCachedTextParse(&text, buf, str);
     float rx = std::round(x);
     float ry = std::round(y);
     C2D_DrawText(&text, C2D_WithColor, rx + 1.0f, ry + 1.0f, z - 0.001f, scale, scale, shadowColor);
@@ -63,8 +151,7 @@ void drawTextWithShadow(C2D_TextBuf buf, float x, float y, float scale, u32 colo
 
 void drawCenteredTextWithShadow(C2D_TextBuf buf, float cx, float cy, float scale, u32 color, const char* str, float z, u32 shadowColor) {
     C2D_Text text;
-    C2D_TextParse(&text, buf, str);
-    C2D_TextOptimize(&text);
+    drawCachedTextParse(&text, buf, str);
     float w = 0.0f, h = 0.0f;
     C2D_TextGetDimensions(&text, scale, scale, &w, &h);
     float rx = std::round(cx - (w * 0.5f));
@@ -75,8 +162,7 @@ void drawCenteredTextWithShadow(C2D_TextBuf buf, float cx, float cy, float scale
 
 void drawRightAlignedText(C2D_TextBuf buf, float rx, float y, float scale, u32 color, const char* str, float z) {
     C2D_Text text;
-    C2D_TextParse(&text, buf, str);
-    C2D_TextOptimize(&text);
+    drawCachedTextParse(&text, buf, str);
     C2D_DrawText(&text, C2D_WithColor | C2D_AlignRight, rx, y, z, scale, scale, color);
 }
 

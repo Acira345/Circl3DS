@@ -359,28 +359,47 @@ public:
             return best;
         };
 
-        std::sort(sets.begin(), sets.end(),
-            [&](const BeatmapSet& a, const BeatmapSet& b) {
+        // Precalcular claves de ordenación para evitar asignaciones de strings y consultas repetidas en O(N log N)
+        struct SortItem {
+            size_t idx;
+            std::string titleLow;
+            std::string artistLow;
+            float metric;
+        };
+        std::vector<SortItem> items(sets.size());
+        for (size_t i = 0; i < sets.size(); ++i) {
+            const auto& s = sets[i];
+            items[i].idx = i;
+            items[i].titleLow = Beatmap::toLower(s.title);
+            if (sortMode == SORT_BY_ARTIST) items[i].artistLow = Beatmap::toLower(s.artist);
+            if (sortMode == SORT_BY_STARS)       items[i].metric = getSetMaxStars(s);
+            else if (sortMode == SORT_BY_RECORD) items[i].metric = getSetBestPP(s);
+            else                                 items[i].metric = 0.0f;
+        }
+
+        std::sort(items.begin(), items.end(),
+            [&](const SortItem& ia, const SortItem& ib) {
+                const BeatmapSet& a = sets[ia.idx];
+                const BeatmapSet& b = sets[ib.idx];
                 if (sortMode == SORT_BY_ARTIST) {
-                    std::string aa = Beatmap::toLower(a.artist);
-                    std::string ba = Beatmap::toLower(b.artist);
-                    if (aa != ba) return aa < ba;
+                    if (ia.artistLow != ib.artistLow) return ia.artistLow < ib.artistLow;
                 } else if (sortMode == SORT_BY_STARS) {
-                    float sa = getSetMaxStars(a);
-                    float sb = getSetMaxStars(b);
-                    if (sa != sb) return sa < sb;
+                    if (ia.metric != ib.metric) return ia.metric < ib.metric;
                 } else if (sortMode == SORT_BY_RECORD) {
-                    float pa = getSetBestPP(a);
-                    float pb = getSetBestPP(b);
-                    if (pa != pb) return pa > pb;
+                    if (ia.metric != ib.metric) return ia.metric > ib.metric;
                 }
                 if (a.fromRomfs != b.fromRomfs) return !a.fromRomfs;
-                std::string ta = Beatmap::toLower(a.title);
-                std::string tb = Beatmap::toLower(b.title);
-                if (ta != tb) return ta < tb;
+                if (ia.titleLow != ib.titleLow) return ia.titleLow < ib.titleLow;
                 return a.folderPath < b.folderPath;
             }
         );
+
+        std::vector<BeatmapSet> sortedSets;
+        sortedSets.reserve(sets.size());
+        for (const auto& it : items) {
+            sortedSets.push_back(std::move(sets[it.idx]));
+        }
+        sets = std::move(sortedSets);
     }
 
 private:

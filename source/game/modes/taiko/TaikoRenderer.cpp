@@ -3,70 +3,98 @@
 #include "backend/i18n/Localization.hpp"
 
 void ModeTaiko::drawRing(float x, float y, float radius, float thickness, u32 color, int segments, float z) {
+    if (segments <= 0) return;
     const float step = (2.0f * static_cast<float>(M_PI)) / segments;
+    const float cosS = std::cos(step), sinS = std::sin(step);
+    float c = 1.0f, s = 0.0f;
     for (int i = 0; i < segments; ++i) {
-        float a0 = i * step;
-        float a1 = (i + 1) * step;
+        float nc = c * cosS - s * sinS;
+        float ns = s * cosS + c * sinS;
         C2D_DrawLine(
-            x + std::cos(a0) * radius, y + std::sin(a0) * radius, color,
-            x + std::cos(a1) * radius, y + std::sin(a1) * radius, color,
+            x + c * radius, y + s * radius, color,
+            x + nc * radius, y + ns * radius, color,
             thickness, z
         );
+        c = nc; s = ns;
     }
 }
 
 void ModeTaiko::drawEllipseFilled(float cx, float cy, float rx, float ry, u32 color, float z, int segs) {
+    if (segs <= 0) return;
     const float step = (2.0f * static_cast<float>(M_PI)) / segs;
+    const float cosS = std::cos(step), sinS = std::sin(step);
+    float c = 1.0f, s = 0.0f;
     for (int i = 0; i < segs; ++i) {
-        float a0 = i * step;
-        float a1 = (i + 1) * step;
+        float nc = c * cosS - s * sinS;
+        float ns = s * cosS + c * sinS;
         C2D_DrawTriangle(
             cx, cy, color,
-            cx + std::cos(a0) * rx, cy + std::sin(a0) * ry, color,
-            cx + std::cos(a1) * rx, cy + std::sin(a1) * ry, color,
+            cx + c * rx, cy + s * ry, color,
+            cx + nc * rx, cy + ns * ry, color,
             z
         );
+        c = nc; s = ns;
     }
 }
 
 void ModeTaiko::drawEllipseRing(float cx, float cy, float rx, float ry, float thickness, u32 color, float z, int segs) {
+    if (segs <= 0) return;
     const float step = (2.0f * static_cast<float>(M_PI)) / segs;
+    const float cosS = std::cos(step), sinS = std::sin(step);
+    float c = 1.0f, s = 0.0f;
     for (int i = 0; i < segs; ++i) {
-        float a0 = i * step;
-        float a1 = (i + 1) * step;
+        float nc = c * cosS - s * sinS;
+        float ns = s * cosS + c * sinS;
         C2D_DrawLine(
-            cx + std::cos(a0) * rx, cy + std::sin(a0) * ry, color,
-            cx + std::cos(a1) * rx, cy + std::sin(a1) * ry, color,
+            cx + c * rx, cy + s * ry, color,
+            cx + nc * rx, cy + ns * ry, color,
             thickness, z
         );
+        c = nc; s = ns;
     }
 }
 
 void ModeTaiko::drawSunburst(float cx, float cy, float rInner, float rOuter, int rays, u32 color, float z, float rot) {
+    if (rays <= 0) return;
     const float step = (2.0f * static_cast<float>(M_PI)) / rays;
+    const float halfW = step * 0.38f;
+    const float cosS = std::cos(step), sinS = std::sin(step);
+    const float cosH = std::cos(halfW), sinH = std::sin(halfW);
+    float cMid = std::cos(rot), sMid = std::sin(rot);
+    const u32 outerClr = Ui::withAlpha(color, 90);
     for (int i = 0; i < rays; ++i) {
-        float aMid = i * step + rot;
-        float a0 = aMid - step * 0.38f;
-        float a1 = aMid + step * 0.38f;
+        float c0 = cMid * cosH + sMid * sinH;
+        float s0 = sMid * cosH - cMid * sinH;
+        float c1 = cMid * cosH - sMid * sinH;
+        float s1 = sMid * cosH + cMid * sinH;
         C2D_DrawTriangle(
-            cx + std::cos(a0) * rInner, cy + std::sin(a0) * rInner, color,
-            cx + std::cos(a1) * rInner, cy + std::sin(a1) * rInner, color,
-            cx + std::cos(aMid) * rOuter, cy + std::sin(aMid) * rOuter, Ui::withAlpha(color, 90),
+            cx + c0 * rInner, cy + s0 * rInner, color,
+            cx + c1 * rInner, cy + s1 * rInner, color,
+            cx + cMid * rOuter, cy + sMid * rOuter, outerClr,
             z
         );
+        float nc = cMid * cosS - sMid * sinS;
+        float ns = sMid * cosS + cMid * sinS;
+        cMid = nc; sMid = ns;
     }
 }
 
 // Remaches dorados tradicionales (Byo - 鋲)
 void ModeTaiko::drawWadaikoByo(float cx, float cy, float rx, float ry, int count, u32 rivetClr, float z) {
+    if (count <= 0) return;
     const float step = (2.0f * static_cast<float>(M_PI)) / count;
+    const float cosS = std::cos(step), sinS = std::sin(step);
+    float c = 1.0f, s = 0.0f;
+    const u32 shadowClr = Ui::rgba(25, 18, 12, 220);
     for (int i = 0; i < count; ++i) {
-        float ang = i * step;
-        float bx = cx + std::cos(ang) * rx;
-        float by = cy + std::sin(ang) * ry;
-        C2D_DrawCircleSolid(bx, by + 0.6f, z, 2.2f, Ui::rgba(25, 18, 12, 220));
+        float bx = cx + c * rx;
+        float by = cy + s * ry;
+        C2D_DrawCircleSolid(bx, by + 0.6f, z, 2.2f, shadowClr);
         C2D_DrawCircleSolid(bx, by, z + 0.002f, 1.8f, rivetClr);
         C2D_DrawCircleSolid(bx - 0.5f, by - 0.5f, z + 0.004f, 0.6f, CLR_WHITE);
+        float nc = c * cosS - s * sinS;
+        float ns = s * cosS + c * sinS;
+        c = nc; s = ns;
     }
 }
 
@@ -167,6 +195,25 @@ void ModeTaiko::drawKikkoPattern(float startX, float startY, float w, float h, f
     u32 lineClr = Ui::rgba(240, 208, 120, 55);
     u32 flowerClr = Ui::rgba(255, 235, 160, 80);
 
+    static float hexDx[7], hexDy[7];
+    static float flwDx[5], flwDy[5];
+    static bool kikkoLutInit = false;
+    if (!kikkoLutInit) {
+        const float aStep = static_cast<float>(M_PI) / 3.0f;
+        for (int i = 0; i <= 6; ++i) {
+            float a = i * aStep;
+            hexDx[i] = std::cos(a) * (r * 0.95f);
+            hexDy[i] = std::sin(a) * (r * 0.95f);
+        }
+        const float fStep = (2.0f * static_cast<float>(M_PI)) / 5.0f;
+        for (int f = 0; f < 5; ++f) {
+            float fa = f * fStep;
+            flwDx[f] = std::cos(fa) * 3.4f;
+            flwDy[f] = std::sin(fa) * 3.4f;
+        }
+        kikkoLutInit = true;
+    }
+
     int cols = static_cast<int>(w / hStep) + 2;
     int rows = static_cast<int>(h / vStep) + 2;
 
@@ -177,13 +224,10 @@ void ModeTaiko::drawKikkoPattern(float startX, float startY, float w, float h, f
             if (col % 2 == 1) cy += vStep * 0.5f;
 
             // Dibujar hexágono
-            const float aStep = static_cast<float>(M_PI) / 3.0f;
             for (int i = 0; i < 6; ++i) {
-                float a0 = i * aStep;
-                float a1 = (i + 1) * aStep;
                 C2D_DrawLine(
-                    cx + std::cos(a0) * (r * 0.95f), cy + std::sin(a0) * (r * 0.95f), lineClr,
-                    cx + std::cos(a1) * (r * 0.95f), cy + std::sin(a1) * (r * 0.95f), lineClr,
+                    cx + hexDx[i], cy + hexDy[i], lineClr,
+                    cx + hexDx[i + 1], cy + hexDy[i + 1], lineClr,
                     1.0f, z
                 );
             }
@@ -192,8 +236,7 @@ void ModeTaiko::drawKikkoPattern(float startX, float startY, float w, float h, f
             if ((col + row) % 3 == 0) {
                 C2D_DrawCircleSolid(cx, cy, z + 0.001f, 1.8f, flowerClr);
                 for (int f = 0; f < 5; ++f) {
-                    float fa = f * (2.0f * static_cast<float>(M_PI) / 5.0f);
-                    C2D_DrawCircleSolid(cx + std::cos(fa) * 3.4f, cy + std::sin(fa) * 3.4f, z + 0.001f, 1.3f, flowerClr);
+                    C2D_DrawCircleSolid(cx + flwDx[f], cy + flwDy[f], z + 0.001f, 1.3f, flowerClr);
                 }
             }
         }
@@ -294,8 +337,7 @@ void ModeTaiko::drawKomaTop(float cx, float cy, float scale, float rot, float z)
 
 void ModeTaiko::drawCenteredText(C2D_TextBuf buf, float cx, float cy, float scale, u32 color, const char* str, float z) {
     C2D_Text text;
-    C2D_TextParse(&text, buf, str);
-    C2D_TextOptimize(&text);
+    drawCachedTextParse(&text, buf, str);
     float w = 0.0f, h = 0.0f;
     C2D_TextGetDimensions(&text, scale, scale, &w, &h);
     C2D_DrawText(&text, C2D_WithColor, cx - (w * 0.5f), cy - (h * 0.5f), z, scale, scale, color);
@@ -303,8 +345,7 @@ void ModeTaiko::drawCenteredText(C2D_TextBuf buf, float cx, float cy, float scal
 
 void ModeTaiko::drawRightAlignedText(C2D_TextBuf buf, float rx, float cy, float scale, u32 color, const char* str, float z) {
     C2D_Text text;
-    C2D_TextParse(&text, buf, str);
-    C2D_TextOptimize(&text);
+    drawCachedTextParse(&text, buf, str);
     float w = 0.0f, h = 0.0f;
     C2D_TextGetDimensions(&text, scale, scale, &w, &h);
     C2D_DrawText(&text, C2D_WithColor, rx - w, cy - (h * 0.5f), z, scale, scale, color);
@@ -702,6 +743,7 @@ void ModeTaiko::renderTopScreen(C2D_TextBuf textBuf, int songTime, float scrollR
         float endX = (n.type == TAIKO_DRUMROLL || n.type == TAIKO_DENDEN) ? (baseEndX + depthShift(endParallax)) : nx;
 
         if (endX < -80.0f) continue;
+        if (baseNx > 435.0f) break;
         if (nx > 420.0f) continue;
 
         // Subtítulos debajo de la nota
@@ -1066,22 +1108,38 @@ void ModeTaiko::renderBottomDrum(C2D_TextBuf textBuf, float animTick, const Game
     u32 katsuRightClr = Ui::lerpColor(katsuBaseClr, Ui::rgba(200, 250, 255), drumHitKatsuRight);
 
     const int SEGS = 36;
+    static float drumCos[SEGS + 1];
+    static float drumSin[SEGS + 1];
+    static bool drumLeft[SEGS];
+    static bool drumLutInit = false;
+    if (!drumLutInit) {
+        for (int i = 0; i <= SEGS; ++i) {
+            float a = (i * static_cast<float>(M_PI) * 2.0f) / SEGS;
+            drumCos[i] = std::cos(a);
+            drumSin[i] = std::sin(a);
+            if (i < SEGS) {
+                float aMid = ((i + 0.5f) * static_cast<float>(M_PI) * 2.0f) / SEGS;
+                drumLeft[i] = (std::cos(aMid) < 0.0f);
+            }
+        }
+        drumLutInit = true;
+    }
+
     for (int i = 0; i < SEGS; ++i) {
-        float a0 = (i * static_cast<float>(M_PI) * 2.0f) / SEGS;
-        float a1 = ((i + 1) * static_cast<float>(M_PI) * 2.0f) / SEGS;
-        bool isLeft = (std::cos((a0 + a1) * 0.5f) < 0.0f);
-        u32 clr = isLeft ? katsuLeftClr : katsuRightClr;
+        float c0 = drumCos[i], s0 = drumSin[i];
+        float c1 = drumCos[i + 1], s1 = drumSin[i + 1];
+        u32 clr = drumLeft[i] ? katsuLeftClr : katsuRightClr;
 
         C2D_DrawTriangle(
-            cx + std::cos(a0) * donRx, cy + std::sin(a0) * donRy, clr,
-            cx + std::cos(a1) * donRx, cy + std::sin(a1) * donRy, clr,
-            cx + std::cos(a0) * katsuRx, cy + std::sin(a0) * katsuRy, clr,
+            cx + c0 * donRx,   cy + s0 * donRy,   clr,
+            cx + c1 * donRx,   cy + s1 * donRy,   clr,
+            cx + c0 * katsuRx, cy + s0 * katsuRy, clr,
             0.14f
         );
         C2D_DrawTriangle(
-            cx + std::cos(a1) * donRx, cy + std::sin(a1) * donRy, clr,
-            cx + std::cos(a1) * katsuRx, cy + std::sin(a1) * katsuRy, clr,
-            cx + std::cos(a0) * katsuRx, cy + std::sin(a0) * katsuRy, clr,
+            cx + c1 * donRx,   cy + s1 * donRy,   clr,
+            cx + c1 * katsuRx, cy + s1 * katsuRy, clr,
+            cx + c0 * katsuRx, cy + s0 * katsuRy, clr,
             0.14f
         );
     }
@@ -1093,15 +1151,12 @@ void ModeTaiko::renderBottomDrum(C2D_TextBuf textBuf, float animTick, const Game
     u32 donRightClr  = drumHitDonRight > 0.01f ? Ui::lerpColor(donHitClr, CLR_WHITE, drumHitDonRight * 0.6f) : donBasePeach;
 
     for (int i = 0; i < SEGS; ++i) {
-        float a0 = (i * static_cast<float>(M_PI) * 2.0f) / SEGS;
-        float a1 = ((i + 1) * static_cast<float>(M_PI) * 2.0f) / SEGS;
-        bool isLeft = (std::cos((a0 + a1) * 0.5f) < 0.0f);
-        u32 clr = isLeft ? donLeftClr : donRightClr;
+        u32 clr = drumLeft[i] ? donLeftClr : donRightClr;
 
         C2D_DrawTriangle(
             cx, cy, clr,
-            cx + std::cos(a0) * donRx, cy + std::sin(a0) * donRy, clr,
-            cx + std::cos(a1) * donRx, cy + std::sin(a1) * donRy, clr,
+            cx + drumCos[i] * donRx,     cy + drumSin[i] * donRy,     clr,
+            cx + drumCos[i + 1] * donRx, cy + drumSin[i + 1] * donRy, clr,
             0.17f
         );
     }
@@ -1112,15 +1167,12 @@ void ModeTaiko::renderBottomDrum(C2D_TextBuf textBuf, float animTick, const Game
     u32 coralRightClr = drumHitDonRight > 0.01f ? Ui::lerpColor(Ui::rgba(255, 80, 80), CLR_WHITE, drumHitDonRight) : coralBase;
 
     for (int i = 0; i < SEGS; ++i) {
-        float a0 = (i * static_cast<float>(M_PI) * 2.0f) / SEGS;
-        float a1 = ((i + 1) * static_cast<float>(M_PI) * 2.0f) / SEGS;
-        bool isLeft = (std::cos((a0 + a1) * 0.5f) < 0.0f);
-        u32 clr = isLeft ? coralLeftClr : coralRightClr;
+        u32 clr = drumLeft[i] ? coralLeftClr : coralRightClr;
 
         C2D_DrawTriangle(
             cx, cy, clr,
-            cx + std::cos(a0) * innerCoralRx, cy + std::sin(a0) * innerCoralRy, clr,
-            cx + std::cos(a1) * innerCoralRx, cy + std::sin(a1) * innerCoralRy, clr,
+            cx + drumCos[i] * innerCoralRx,     cy + drumSin[i] * innerCoralRy,     clr,
+            cx + drumCos[i + 1] * innerCoralRx, cy + drumSin[i + 1] * innerCoralRy, clr,
             0.18f
         );
     }

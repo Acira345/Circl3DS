@@ -4,8 +4,7 @@
 
 void ModeMania::drawCenteredText(C2D_TextBuf buf, float cx, float cy, float scale, u32 color, const char* str, float z) {
     C2D_Text text;
-    C2D_TextParse(&text, buf, str);
-    C2D_TextOptimize(&text);
+    drawCachedTextParse(&text, buf, str);
     float w = 0.0f, h = 0.0f;
     C2D_TextGetDimensions(&text, scale, scale, &w, &h);
     C2D_DrawText(&text, C2D_WithColor, cx - (w * 0.5f), cy - (h * 0.5f), z, scale, scale, color);
@@ -19,14 +18,21 @@ void ModeMania::drawRectOutline(float x, float y, float w, float h, float thickn
 }
 
 void ModeMania::drawRing(float x, float y, float radius, float thickness, u32 color, int segments, float z) {
+    if (segments < 3) return;
     const float step = 6.2831853f / segments;
-    for (int i = 0; i < segments; ++i) {
-        float a0 = i * step;
-        float a1 = (i + 1) * step;
-        C2D_DrawLine(x + std::cos(a0) * radius, y + std::sin(a0) * radius, color,
-                     x + std::cos(a1) * radius, y + std::sin(a1) * radius, color,
-                     thickness, z);
+    const float cosS = std::cos(step);
+    const float sinS = std::sin(step);
+    float ux = 1.0f, uy = 0.0f;
+    float px = x + radius, py = y;
+    for (int i = 1; i < segments; ++i) {
+        float nx = ux * cosS - uy * sinS;
+        float ny = ux * sinS + uy * cosS;
+        ux = nx; uy = ny;
+        float cx = x + ux * radius, cy = y + uy * radius;
+        C2D_DrawLine(px, py, color, cx, cy, color, thickness, z);
+        px = cx; py = cy;
     }
+    C2D_DrawLine(px, py, color, x + radius, y, color, thickness, z);
 }
 
 // Renderizado en Pantalla Superior (400x240) con soporte Estereoscópico 3D

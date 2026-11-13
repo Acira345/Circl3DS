@@ -7,6 +7,10 @@
 void drawRingZ(float x, float y, float z, float radius, float thickness, u32 color, int segments = 24);
 void drawRing(float x, float y, float radius, float thickness, u32 color, int segments = 24, float z = 0.5f);
 void drawRectOutline(float x, float y, float w, float h, float thickness, u32 color, float z = 0.5f);
+void drawCachedTextParse(C2D_Text* outText, C2D_TextBuf buf, const char* str);
+void resetDrawFrameTextCache();
+void clearDrawStaticTextCache();
+void shutdownDrawTextCache();
 void drawText(C2D_TextBuf buf, float x, float y, float scale, u32 color, const char* str, float z = 0.85f);
 void drawCenteredText(C2D_TextBuf buf, float cx, float cy, float scale, u32 color, const char* str, float z = 0.85f);
 void drawTextWithShadow(C2D_TextBuf buf, float x, float y, float scale, u32 color, const char* str, float z = 0.85f, u32 shadowColor = Ui::rgba(0, 0, 0, 220));

@@ -52,16 +52,19 @@ struct LoadedTexture {
 
     // Resultado de decodificacion en CPU (ya en formato Morton de la PICA200), listo para subir a GPU
     struct Decoded {
-        u32* data = nullptr;
+        void* data = nullptr;
+        size_t dataBytes = 0;
+        GPU_TEXCOLOR format = GPU_RGBA8;
         u32 texW = 0, texH = 0, dstW = 0, dstH = 0;
         int origW = 0, origH = 0;
-        void release() { if (data) { std::free(data); data = nullptr; } }
+        void release() { if (data) { std::free(data); data = nullptr; dataBytes = 0; } }
     };
 
     // Decodifica + escala + swizzle. Solo CPU/heap: seguro para ejecutarse en un hilo secundario.
     static bool decode(const std::string& path, int maxW, int maxH, Decoded& out) {
         out = Decoded();
         int srcW = 0, srcH = 0, channels = 0;
+        int reqComp = 4;
         unsigned char* pixels = nullptr;
 
         // Leer la imagen completa en un solo bloque desde sdmc:/romfs: para evitar cientos de lecturas pequeñas en la SD
@@ -76,7 +79,11 @@ struct LoadedTexture {
                         std::fclose(f);
                         f = nullptr;
                         if (nRead == static_cast<size_t>(fsz)) {
-                            pixels = stbi_load_from_memory(fileBuf, static_cast<int>(fsz), &srcW, &srcH, &channels, 4);
+                            int infoW = 0, infoH = 0, infoComp = 0;
+                            if (stbi_info_from_memory(fileBuf, static_cast<int>(fsz), &infoW, &infoH, &infoComp) && infoComp == 3) {
+                                reqComp = 3; // Imágenes opacas (JPEG / RGB PNG) -> GPU_RGB565 (50% menos VRAM y transferencia)
+                            }
+                            pixels = stbi_load_from_memory(fileBuf, static_cast<int>(fsz), &srcW, &srcH, &channels, reqComp);
                         }
                         std::free(fileBuf);
                     }
@@ -85,7 +92,8 @@ struct LoadedTexture {
             if (f) std::fclose(f);
         }
         if (!pixels) {
-            pixels = stbi_load(path.c_str(), &srcW, &srcH, &channels, 4);
+            reqComp = 4;
+            pixels = stbi_load(path.c_str(), &srcW, &srcH, &channels, reqComp);
         }
         if (!pixels || srcW <= 0 || srcH <= 0) {
             if (pixels) stbi_image_free(pixels);
@@ -105,42 +113,77 @@ struct LoadedTexture {
         u32 texW = nextPow2(dstW);
         u32 texH = nextPow2(dstH);
 
-        u32* outBuf = static_cast<u32*>(std::calloc(texW * texH, sizeof(u32)));
-        if (!outBuf) {
-            stbi_image_free(pixels);
-            return false;
-        }
-
         // Tabla de entrelazado Morton para tiles de 8x8 de la GPU PICA200
         static const u8 mortonLUT[8] = { 0, 1, 4, 5, 16, 17, 20, 21 };
         u32 tilesPerRow = texW >> 3;
+        bool useRgb565 = (reqComp == 3);
 
-        for (u32 dy = 0; dy < dstH; ++dy) {
-            u32 sy = std::min(static_cast<u32>(srcH - 1), (dy * static_cast<u32>(srcH)) / dstH);
-            const unsigned char* srcRow = pixels + (sy * srcW * 4);
-
-            // En PICA200 (igual que tex3ds), memY = 0 corresponde a subtex.top = 1.0f
-            u32 memY = dy;
-            u32 tileY = memY >> 3;
-            u32 inTileY = mortonLUT[memY & 7] << 1;
-
-            for (u32 dx = 0; dx < dstW; ++dx) {
-                u32 sx = std::min(static_cast<u32>(srcW - 1), (dx * static_cast<u32>(srcW)) / dstW);
-                const unsigned char* p = srcRow + (sx * 4);
-
-                // Formato GPU_RGBA8 en PICA200: [A, B, G, R] en little-endian = (r<<24)|(g<<16)|(b<<8)|a
-                u32 rgba8 = (static_cast<u32>(p[0]) << 24) | (static_cast<u32>(p[1]) << 16) |
-                            (static_cast<u32>(p[2]) << 8) | static_cast<u32>(p[3]);
-
-                u32 tileX = dx >> 3;
-                u32 inTileX = mortonLUT[dx & 7];
-                u32 tileIndex = (tileY * tilesPerRow) + tileX;
-                outBuf[(tileIndex << 6) | inTileY | inTileX] = rgba8;
+        if (useRgb565) {
+            size_t totalBytes = static_cast<size_t>(texW) * texH * sizeof(u16);
+            u16* outBuf = static_cast<u16*>(std::calloc(texW * texH, sizeof(u16)));
+            if (!outBuf) {
+                stbi_image_free(pixels);
+                return false;
             }
+            for (u32 dy = 0; dy < dstH; ++dy) {
+                u32 sy = std::min(static_cast<u32>(srcH - 1), (dy * static_cast<u32>(srcH)) / dstH);
+                const unsigned char* srcRow = pixels + (sy * srcW * 3);
+                u32 tileY = dy >> 3;
+                u32 inTileY = mortonLUT[dy & 7] << 1;
+
+                for (u32 dx = 0; dx < dstW; ++dx) {
+                    u32 sx = std::min(static_cast<u32>(srcW - 1), (dx * static_cast<u32>(srcW)) / dstW);
+                    const unsigned char* p = srcRow + (sx * 3);
+                    u16 rgb565 = static_cast<u16>(
+                        ((static_cast<u32>(p[0]) >> 3) << 11) |
+                        ((static_cast<u32>(p[1]) >> 2) << 5)  |
+                        (static_cast<u32>(p[2]) >> 3)
+                    );
+                    u32 tileX = dx >> 3;
+                    u32 inTileX = mortonLUT[dx & 7];
+                    u32 tileIndex = (tileY * tilesPerRow) + tileX;
+                    outBuf[(tileIndex << 6) | inTileY | inTileX] = rgb565;
+                }
+            }
+            out.data = outBuf;
+            out.dataBytes = totalBytes;
+            out.format = GPU_RGB565;
+        } else {
+            size_t totalBytes = static_cast<size_t>(texW) * texH * sizeof(u32);
+            u32* outBuf = static_cast<u32*>(std::calloc(texW * texH, sizeof(u32)));
+            if (!outBuf) {
+                stbi_image_free(pixels);
+                return false;
+            }
+            for (u32 dy = 0; dy < dstH; ++dy) {
+                u32 sy = std::min(static_cast<u32>(srcH - 1), (dy * static_cast<u32>(srcH)) / dstH);
+                const unsigned char* srcRow = pixels + (sy * srcW * 4);
+
+                // En PICA200 (igual que tex3ds), memY = 0 corresponde a subtex.top = 1.0f
+                u32 memY = dy;
+                u32 tileY = memY >> 3;
+                u32 inTileY = mortonLUT[memY & 7] << 1;
+
+                for (u32 dx = 0; dx < dstW; ++dx) {
+                    u32 sx = std::min(static_cast<u32>(srcW - 1), (dx * static_cast<u32>(srcW)) / dstW);
+                    const unsigned char* p = srcRow + (sx * 4);
+
+                    // Formato GPU_RGBA8 en PICA200: [A, B, G, R] en little-endian = (r<<24)|(g<<16)|(b<<8)|a
+                    u32 rgba8 = (static_cast<u32>(p[0]) << 24) | (static_cast<u32>(p[1]) << 16) |
+                                (static_cast<u32>(p[2]) << 8) | static_cast<u32>(p[3]);
+
+                    u32 tileX = dx >> 3;
+                    u32 inTileX = mortonLUT[dx & 7];
+                    u32 tileIndex = (tileY * tilesPerRow) + tileX;
+                    outBuf[(tileIndex << 6) | inTileY | inTileX] = rgba8;
+                }
+            }
+            out.data = outBuf;
+            out.dataBytes = totalBytes;
+            out.format = GPU_RGBA8;
         }
 
         stbi_image_free(pixels);
-        out.data = outBuf;
         out.texW = texW; out.texH = texH;
         out.dstW = dstW; out.dstH = dstH;
         out.origW = srcW; out.origH = srcH;
@@ -149,13 +192,13 @@ struct LoadedTexture {
 
     // Sube un resultado decodificado a la GPU (rapido: solo memcpy). Debe llamarse en el hilo principal.
     bool upload(const Decoded& d, const std::string& path) {
-        if (!d.data) return false;
+        if (!d.data || d.dataBytes == 0) return false;
         unload();
-        if (!C3D_TexInit(&tex, d.texW, d.texH, GPU_RGBA8)) return false;
+        if (!C3D_TexInit(&tex, d.texW, d.texH, d.format)) return false;
         C3D_TexSetFilter(&tex, GPU_LINEAR, GPU_LINEAR);
         C3D_TexSetWrap(&tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-        std::memcpy(tex.data, d.data, d.texW * d.texH * sizeof(u32));
-        GSPGPU_FlushDataCache(tex.data, d.texW * d.texH * sizeof(u32));
+        std::memcpy(tex.data, d.data, d.dataBytes);
+        GSPGPU_FlushDataCache(tex.data, d.dataBytes);
 
         subtex.width  = static_cast<u16>(d.dstW);
         subtex.height = static_cast<u16>(d.dstH);

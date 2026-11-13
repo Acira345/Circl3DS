@@ -516,12 +516,26 @@ struct Beatmap {
     }
 
     static Vec2 evalBezier(const std::vector<Vec2>& pts, float t) {
+        int n = static_cast<int>(pts.size());
+        if (n <= 0) return Vec2();
+        if (n <= 64) {
+            Vec2 tmp[64];
+            for (int i = 0; i < n; ++i) tmp[i] = pts[i];
+            const float oneMinusT = 1.0f - t;
+            for (int r = 1; r < n; ++r) {
+                for (int i = 0; i < n - r; ++i) {
+                    tmp[i].x = oneMinusT * tmp[i].x + t * tmp[i + 1].x;
+                    tmp[i].y = oneMinusT * tmp[i].y + t * tmp[i + 1].y;
+                }
+            }
+            return tmp[0];
+        }
         std::vector<Vec2> tmp = pts;
-        int n = static_cast<int>(tmp.size());
+        const float oneMinusT = 1.0f - t;
         for (int r = 1; r < n; ++r) {
             for (int i = 0; i < n - r; ++i) {
-                tmp[i].x = (1.0f - t) * tmp[i].x + t * tmp[i + 1].x;
-                tmp[i].y = (1.0f - t) * tmp[i].y + t * tmp[i + 1].y;
+                tmp[i].x = oneMinusT * tmp[i].x + t * tmp[i + 1].x;
+                tmp[i].y = oneMinusT * tmp[i].y + t * tmp[i + 1].y;
             }
         }
         return tmp[0];
@@ -640,63 +654,81 @@ struct Beatmap {
         return result;
     }
 
-    // Obtiene el beatLength base (ms por beat) y el multiplicador SV activos en timeMs
+    // Obtiene el beatLength base (ms por beat) y el multiplicador SV activos en timeMs en O(log N)
     void getTimingAt(int timeMs, float& outBeatLength, float& outSvMult) const {
         outBeatLength = 333.33f;
         outSvMult = 1.0f;
         if (timingPoints.empty()) return;
 
-        // Buscar el primer uninherited como fallback inicial
-        for (const auto& tp : timingPoints) {
-            if (tp.uninherited && tp.beatLength > 0.0f) {
-                outBeatLength = tp.beatLength;
+        double cutoff = static_cast<double>(timeMs) + 1.0;
+        auto it = std::upper_bound(
+            timingPoints.begin(), timingPoints.end(), cutoff,
+            [](double val, const TimingPoint& tp) { return val < tp.time; }
+        );
+
+        bool foundUninherited = false;
+        bool foundInherited = false;
+        size_t idx = static_cast<size_t>(it - timingPoints.begin());
+        while (idx > 0) {
+            --idx;
+            const auto& tp = timingPoints[idx];
+            if (tp.uninherited) {
+                if (tp.beatLength > 0.0f) outBeatLength = tp.beatLength;
+                foundUninherited = true;
                 break;
+            } else if (!foundInherited && tp.beatLength < 0.0f) {
+                float mult = -100.0f / tp.beatLength;
+                outSvMult = std::max(0.1f, std::min(10.0f, mult));
+                foundInherited = true;
             }
         }
 
-        for (const auto& tp : timingPoints) {
-            if (tp.time > static_cast<double>(timeMs) + 1.0) break;
-            if (tp.uninherited) {
-                if (tp.beatLength > 0.0f) outBeatLength = tp.beatLength;
-                outSvMult = 1.0f;
-            } else {
-                if (tp.beatLength < 0.0f) {
-                    float mult = -100.0f / tp.beatLength;
-                    outSvMult = std::max(0.1f, std::min(10.0f, mult));
+        if (!foundUninherited) {
+            for (const auto& tp : timingPoints) {
+                if (tp.uninherited && tp.beatLength > 0.0f) {
+                    outBeatLength = tp.beatLength;
+                    break;
                 }
             }
         }
     }
 
-    // Determina si el efecto Kiai Time está activo en el momento timeMs
+    // Determina si el efecto Kiai Time está activo en el momento timeMs en O(log N)
     bool isKiaiAt(int timeMs) const {
         if (timingPoints.empty()) return false;
-        bool activeKiai = false;
-        for (const auto& tp : timingPoints) {
-            if (tp.time > static_cast<double>(timeMs) + 1.0) break;
-            activeKiai = tp.kiai;
-        }
-        return activeKiai;
+        double cutoff = static_cast<double>(timeMs) + 1.0;
+        auto it = std::upper_bound(
+            timingPoints.begin(), timingPoints.end(), cutoff,
+            [](double val, const TimingPoint& tp) { return val < tp.time; }
+        );
+        if (it == timingPoints.begin()) return false;
+        return (it - 1)->kiai;
     }
 
-    // Obtiene el tiempo base y duracion del beat activo para ritmos y metronomos (Nightcore)
+    // Obtiene el tiempo base y duracion del beat activo para ritmos y metronomos (Nightcore) en O(log N)
     bool getBeatInfoAt(int timeMs, double& outBeatTime, float& outBeatLength) const {
         if (timingPoints.empty()) {
             outBeatTime = 0.0;
             outBeatLength = baseBeatLengthMs > 0.0f ? baseBeatLengthMs : 500.0f;
             return false;
         }
-        double tpTime = timingPoints.front().time;
-        float beatLen = baseBeatLengthMs > 0.0f ? baseBeatLengthMs : 500.0f;
-        for (const auto& tp : timingPoints) {
-            if (tp.time > static_cast<double>(timeMs) + 1.0) break;
+        double cutoff = static_cast<double>(timeMs) + 1.0;
+        auto it = std::upper_bound(
+            timingPoints.begin(), timingPoints.end(), cutoff,
+            [](double val, const TimingPoint& tp) { return val < tp.time; }
+        );
+        size_t idx = static_cast<size_t>(it - timingPoints.begin());
+        while (idx > 0) {
+            --idx;
+            const auto& tp = timingPoints[idx];
             if (tp.uninherited && tp.beatLength > 0.0f) {
-                tpTime = tp.time;
-                beatLen = tp.beatLength;
+                outBeatTime = tp.time;
+                outBeatLength = tp.beatLength;
+                return true;
             }
         }
-        outBeatTime = tpTime;
-        outBeatLength = beatLen;
+        outBeatTime = timingPoints.front().time;
+        outBeatLength = baseBeatLengthMs > 0.0f ? baseBeatLengthMs : 500.0f;
         return true;
     }
 
@@ -825,6 +857,32 @@ struct Beatmap {
         std::string section = "";
         int currentComboNum = 1;
         int currentColorIdx = 0;
+        bool timingPointsSorted = false;
+
+        struct StrSpan {
+            const char* ptr;
+            size_t len;
+        };
+        auto splitLineSpans = [](const char* s, size_t sLen, char delim, std::vector<StrSpan>& out) {
+            out.clear();
+            const char* cur = s;
+            const char* end = s + sLen;
+            while (cur <= end) {
+                const char* sep = cur;
+                while (sep < end && *sep != delim) ++sep;
+                out.push_back({ cur, static_cast<size_t>(sep - cur) });
+                if (sep >= end) break;
+                cur = sep + 1;
+            }
+        };
+        std::vector<StrSpan> tokSpans;
+        tokSpans.reserve(16);
+        std::vector<Vec2> ctrlPts;
+        ctrlPts.reserve(32);
+        std::vector<Vec2> rawPoly;
+        rawPoly.reserve(128);
+        std::vector<Vec2> bezSub;
+        bezSub.reserve(32);
 
         while (std::getline(file, line)) {
             if (line.size() >= 3 && (unsigned char)line[0] == 0xEF &&
@@ -837,6 +895,12 @@ struct Beatmap {
 
             if (line.front() == '[' && line.back() == ']') {
                 section = trim(line.substr(1, line.length() - 2));
+                if (section == "HitObjects" && !metadataOnly && !timingPointsSorted && !timingPoints.empty()) {
+                    std::stable_sort(timingPoints.begin(), timingPoints.end(), [](const TimingPoint& a, const TimingPoint& b) {
+                        return a.time < b.time;
+                    });
+                    timingPointsSorted = true;
+                }
                 continue;
             }
 
@@ -936,21 +1000,21 @@ struct Beatmap {
                 }
             } else if (section == "TimingPoints") {
                 if (metadataOnly && foundBaseBpm) continue;
-                std::vector<std::string> tokens = split(line, ',');
-                if (tokens.size() >= 2) {
+                splitLineSpans(line.c_str(), line.size(), ',', tokSpans);
+                if (tokSpans.size() >= 2) {
                     TimingPoint tp;
-                    tp.time = std::strtod(tokens[0].c_str(), nullptr);
-                    tp.beatLength = std::strtof(tokens[1].c_str(), nullptr);
-                    if (tokens.size() >= 7) {
-                        tp.uninherited = (std::atoi(tokens[6].c_str()) != 0);
+                    tp.time = tokSpans[0].len ? std::strtod(tokSpans[0].ptr, nullptr) : 0.0;
+                    tp.beatLength = tokSpans[1].len ? std::strtof(tokSpans[1].ptr, nullptr) : 333.33f;
+                    if (tokSpans.size() >= 7) {
+                        tp.uninherited = (std::strtol(tokSpans[6].ptr, nullptr, 10) != 0);
                     } else {
                         tp.uninherited = (tp.beatLength > 0.0f);
                     }
-                    if (tokens.size() >= 6) {
-                        tp.volume = std::atoi(tokens[5].c_str());
+                    if (tokSpans.size() >= 6) {
+                        tp.volume = static_cast<int>(std::strtol(tokSpans[5].ptr, nullptr, 10));
                     }
-                    if (tokens.size() >= 8) {
-                        tp.kiai = (std::atoi(tokens[7].c_str()) & 1) != 0;
+                    if (tokSpans.size() >= 8) {
+                        tp.kiai = (std::strtol(tokSpans[7].ptr, nullptr, 10) & 1) != 0;
                     }
                     if (!foundBaseBpm && tp.uninherited && tp.beatLength > 60.0f && tp.beatLength < 2000.0f) {
                         baseBeatLengthMs = tp.beatLength;
@@ -959,6 +1023,7 @@ struct Beatmap {
                     }
                     if (!metadataOnly) {
                         timingPoints.push_back(tp);
+                        timingPointsSorted = false;
                     }
                 }
             } else if (section == "HitObjects") {
@@ -1006,33 +1071,31 @@ struct Beatmap {
                     continue;
                 }
 
-                std::vector<std::string> tokens = split(line, ',');
-                if (tokens.size() < 5) continue;
+                splitLineSpans(line.c_str(), line.size(), ',', tokSpans);
+                if (tokSpans.size() < 5) continue;
 
-                int type = std::atoi(tokens[3].c_str());
+                int type = static_cast<int>(std::strtol(tokSpans[3].ptr, nullptr, 10));
                 bool isCircle  = (type & 1) != 0;
                 bool isSlider  = (type & 2) != 0;
                 bool isSpinner = (type & 8) != 0;
                 bool isHold    = (type & 128) != 0;
+
+                float hx = std::strtof(tokSpans[0].ptr, nullptr);
+                float hy = std::strtof(tokSpans[1].ptr, nullptr);
+                int htime = static_cast<int>(std::strtol(tokSpans[2].ptr, nullptr, 10));
 
                 if (isCircle)  { circleCount++;  maxPossibleCombo += 1; }
                 if (isSpinner) { spinnerCount++; maxPossibleCombo += 1; }
                 if (isHold)    { circleCount++;  maxPossibleCombo += 2; }
                 if (isSlider)  {
                     sliderCount++;
-                    int reps = (tokens.size() >= 7) ? std::max(1, std::atoi(tokens[6].c_str())) : 1;
+                    int reps = (tokSpans.size() >= 7) ? std::max(1, static_cast<int>(std::strtol(tokSpans[6].ptr, nullptr, 10))) : 1;
                     maxPossibleCombo += 1 + reps;
                 }
 
                 if (isCircle || isSlider || isHold) {
-                    strainSamples.push_back({
-                        std::strtof(tokens[0].c_str(), nullptr),
-                        std::strtof(tokens[1].c_str(), nullptr),
-                        std::atoi(tokens[2].c_str())
-                    });
+                    strainSamples.push_back({ hx, hy, htime });
                 }
-
-                if (metadataOnly) continue;
 
                 if (isCircle || isSlider || isSpinner || isHold) {
                     int colorCount = customComboColors.empty() ? 4 : static_cast<int>(customComboColors.size());
@@ -1045,11 +1108,11 @@ struct Beatmap {
                     }
 
                     HitCircle c;
-                    c.x = std::strtof(tokens[0].c_str(), nullptr);
-                    c.y = std::strtof(tokens[1].c_str(), nullptr);
-                    c.time = std::atoi(tokens[2].c_str());
+                    c.x = hx;
+                    c.y = hy;
+                    c.time = htime;
                     c.endTime = c.time;
-                    c.hitSound = std::atoi(tokens[4].c_str());
+                    c.hitSound = static_cast<int>(std::strtol(tokSpans[4].ptr, nullptr, 10));
                     c.comboNumber = currentComboNum;
                     c.colorIndex = currentColorIdx;
                     c.state = NOT_HIT;
@@ -1057,34 +1120,37 @@ struct Beatmap {
                     c.isSpinner = isSpinner;
                     c.isHold = isHold;
 
-                    if (isHold && tokens.size() >= 6) {
-                        std::string endStr = tokens[5];
-                        size_t colon = endStr.find(':');
-                        if (colon != std::string::npos) endStr = endStr.substr(0, colon);
-                        c.endTime = std::max(c.time + 30, std::atoi(endStr.c_str()));
-                    } else if (isSpinner && tokens.size() >= 6) {
+                    if (isHold && tokSpans.size() >= 6) {
+                        c.endTime = std::max(c.time + 30, static_cast<int>(std::strtol(tokSpans[5].ptr, nullptr, 10)));
+                    } else if (isSpinner && tokSpans.size() >= 6) {
                         c.x = 256.0f;
                         c.y = 192.0f;
-                        c.endTime = std::max(c.time + 100, std::atoi(tokens[5].c_str()));
+                        c.endTime = std::max(c.time + 100, static_cast<int>(std::strtol(tokSpans[5].ptr, nullptr, 10)));
                         float durSec = static_cast<float>(c.endTime - c.time) / 1000.0f;
                         c.spinnerRequiredRads = std::max(6.28f, durSec * 2.2f * 6.283185f);
-                    } else if (isSlider && tokens.size() >= 8) {
-                        std::vector<std::string> pts = split(tokens[5], '|');
-                        char curveType = (!pts.empty() && !pts[0].empty()) ? pts[0][0] : 'B';
+                    } else if (isSlider && tokSpans.size() >= 8) {
+                        const char* pCur = tokSpans[5].ptr;
+                        const char* pEnd = tokSpans[5].ptr + tokSpans[5].len;
+                        char curveType = (pCur < pEnd && *pCur != '|') ? *pCur : 'B';
 
-                        std::vector<Vec2> ctrlPts;
+                        ctrlPts.clear();
                         ctrlPts.push_back(Vec2(c.x, c.y));
-                        for (size_t i = 1; i < pts.size(); ++i) {
-                            std::vector<std::string> xy = split(pts[i], ':');
-                            if (xy.size() == 2) {
-                                ctrlPts.push_back(Vec2(
-                                    std::strtof(xy[0].c_str(), nullptr),
-                                    std::strtof(xy[1].c_str(), nullptr)
-                                ));
+                        while (pCur < pEnd && *pCur != '|') ++pCur;
+                        while (pCur < pEnd) {
+                            if (*pCur == '|') ++pCur;
+                            if (pCur >= pEnd) break;
+                            char* afterX = nullptr;
+                            float px = std::strtof(pCur, &afterX);
+                            if (afterX && afterX < pEnd && *afterX == ':') {
+                                char* afterY = nullptr;
+                                float py = std::strtof(afterX + 1, &afterY);
+                                ctrlPts.push_back(Vec2(px, py));
+                                pCur = (afterY && afterY <= pEnd) ? afterY : pEnd;
                             }
+                            while (pCur < pEnd && *pCur != '|') ++pCur;
                         }
 
-                        std::vector<Vec2> rawPoly;
+                        rawPoly.clear();
                         rawPoly.push_back(Vec2(c.x, c.y));
 
                         if (curveType == 'L') {
@@ -1104,39 +1170,47 @@ struct Beatmap {
                                 }
                             }
                         } else {
-                            std::vector<Vec2> sub;
+                            bezSub.clear();
                             for (size_t i = 0; i < ctrlPts.size(); ++i) {
-                                if (!sub.empty() && sub.back().x == ctrlPts[i].x && sub.back().y == ctrlPts[i].y) {
-                                    if (sub.size() == 2) {
-                                        rawPoly.push_back(sub.back());
-                                    } else if (sub.size() > 2) {
-                                        int steps = std::min(16, static_cast<int>(sub.size()) * 4);
+                                if (!bezSub.empty() && bezSub.back().x == ctrlPts[i].x && bezSub.back().y == ctrlPts[i].y) {
+                                    if (bezSub.size() == 2) {
+                                        rawPoly.push_back(bezSub.back());
+                                    } else if (bezSub.size() > 2) {
+                                        int steps = std::min(16, static_cast<int>(bezSub.size()) * 4);
                                         for (int s = 1; s <= steps; ++s) {
-                                            rawPoly.push_back(evalBezier(sub, static_cast<float>(s) / steps));
+                                            rawPoly.push_back(evalBezier(bezSub, static_cast<float>(s) / steps));
                                         }
                                     }
-                                    sub.clear();
+                                    bezSub.clear();
                                 }
-                                sub.push_back(ctrlPts[i]);
+                                bezSub.push_back(ctrlPts[i]);
                             }
-                            if (sub.size() == 2) {
-                                rawPoly.push_back(sub.back());
-                            } else if (sub.size() > 2) {
-                                int steps = std::min(16, static_cast<int>(sub.size()) * 4);
+                            if (bezSub.size() == 2) {
+                                rawPoly.push_back(bezSub.back());
+                            } else if (bezSub.size() > 2) {
+                                int steps = std::min(16, static_cast<int>(bezSub.size()) * 4);
                                 for (int s = 1; s <= steps; ++s) {
-                                    rawPoly.push_back(evalBezier(sub, static_cast<float>(s) / steps));
+                                    rawPoly.push_back(evalBezier(bezSub, static_cast<float>(s) / steps));
                                 }
                             }
                         }
 
-                        c.repeats = std::max(1, std::atoi(tokens[6].c_str()));
-                        c.pixelLength = std::strtof(tokens[7].c_str(), nullptr);
+                        c.repeats = std::max(1, static_cast<int>(std::strtol(tokSpans[6].ptr, nullptr, 10)));
+                        c.pixelLength = std::strtof(tokSpans[7].ptr, nullptr);
                         c.sliderPath = resampleToLength(rawPoly, c.pixelLength);
 
-                        if (tokens.size() >= 9 && !tokens[8].empty()) {
-                            std::vector<std::string> edges = split(tokens[8], '|');
-                            for (const auto& e : edges) {
-                                c.edgeHitSounds.push_back(std::atoi(e.c_str()));
+                        if (tokSpans.size() >= 9 && tokSpans[8].len > 0) {
+                            const char* eCur = tokSpans[8].ptr;
+                            const char* eEnd = eCur + tokSpans[8].len;
+                            while (eCur <= eEnd) {
+                                char* afterE = nullptr;
+                                int ehs = static_cast<int>(std::strtol(eCur, &afterE, 10));
+                                c.edgeHitSounds.push_back(ehs);
+                                if (!afterE || afterE >= eEnd) break;
+                                const char* pipe = afterE;
+                                while (pipe < eEnd && *pipe != '|') ++pipe;
+                                if (pipe >= eEnd) break;
+                                eCur = pipe + 1;
                             }
                         }
 
@@ -1163,7 +1237,7 @@ struct Beatmap {
                             }
                         }
                     }
-                    circles.push_back(c);
+                    circles.push_back(std::move(c));
                 }
             }
         }
@@ -1179,9 +1253,11 @@ struct Beatmap {
         starRating = computeStarRatingFromSamples(strainSamples, &strainGraph);
 
         if (!metadataOnly) {
-            std::sort(timingPoints.begin(), timingPoints.end(), [](const TimingPoint& a, const TimingPoint& b) {
-                return a.time < b.time;
-            });
+            if (!timingPointsSorted) {
+                std::stable_sort(timingPoints.begin(), timingPoints.end(), [](const TimingPoint& a, const TimingPoint& b) {
+                    return a.time < b.time;
+                });
+            }
             applyStacking();
 
             // Auto-detección de descansos si existen huecos de más de 5.5 segundos entre notas

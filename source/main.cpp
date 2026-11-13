@@ -32,6 +32,9 @@ int main(int argc, char* argv[]) {
 
     AppContext ctx;
     ctx.init();
+    if (argc > 0 && argv && argv[0]) {
+        ctx.updater.setExecutablePath(argv[0]);
+    }
     runSplashScreen(ctx);
 
     while (aptMainLoop()) {

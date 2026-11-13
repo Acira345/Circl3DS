@@ -58,7 +58,7 @@ void AppContext::init() {
     // Decodificador de fondos en hilo secundario (usa nucleo dedicado en New 3DS)
     bgLoader.start(isNew3DS);
     audio.startAsyncLoader(isNew3DS);
-    videoPlayer.init();
+    videoPlayer.init(isNew3DS);
     previewDelay = 0;
     bgFade = 255.0f;
 
@@ -117,10 +117,12 @@ void AppContext::beginFrame() {
     if (appState != lastAppState) {
         lastAppState = appState;
         screenFade = 1.0f;
+        clearDrawStaticTextCache();
     } else {
         screenFade = Ui::approach(screenFade, 0.0f, 0.18f);
     }
     C2D_TextBufClear(textBuf);
+    resetDrawFrameTextCache();
 
     const SkinProfile& activeSkin = getActiveSkin();
     clrCursor = C2D_Color32(activeSkin.cursorColor.r, activeSkin.cursorColor.g, activeSkin.cursorColor.b, 255);
@@ -179,6 +181,7 @@ void AppContext::shutdown() {
 
     settings.save();
     audio.exitAll();
+    shutdownDrawTextCache();
     if (textBuf) {
         C2D_TextBufDelete(textBuf);
         textBuf = nullptr;
@@ -323,7 +326,11 @@ void AppContext::applyActiveSkinAudio() {
 
 void AppContext::spawnParticles(float osuX, float osuY, u32 color, int count, float minSpd, float maxSpd, float baseSize, int maxLifeFrames) {
     for (int p = 0; p < count; ++p) {
-        if (particles.size() >= 64) particles.erase(particles.begin());
+        if (particles.size() >= 64) {
+            size_t victim = static_cast<size_t>(animTick + p) % particles.size();
+            particles[victim] = particles.back();
+            particles.pop_back();
+        }
         float ang = static_cast<float>(std::rand() % 628) * 0.01f;
         float spd = minSpd + (static_cast<float>(std::rand() % 100) / 100.0f) * (maxSpd - minSpd);
         int lf = std::max(6, maxLifeFrames - (std::rand() % 5));
@@ -640,6 +647,8 @@ bool AppContext::startSelectedBeatmap() {
     comboBurstValue = 0;
     lastComboBurstMilestone = 0;
     lastNcStep = -999999;
+    firstActiveObjIndex = 0;
+    gameplaySongEndTimeMs = 0;
     taikoGuideTimer = 240.0f;
     appState = STATE_PLAYING;
     return true;

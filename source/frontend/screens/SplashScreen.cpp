@@ -205,6 +205,7 @@ void runSplashScreen(AppContext& ctx) {
         // Iniciar dibujado con C3D
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
         C2D_TextBufClear(ctx.textBuf);
+        resetDrawFrameTextCache();
 
         // -------------------------------------------------------------
         // 1. PANTALLA SUPERIOR (400 x 240): Presentación Oficial de osu!

@@ -21,10 +21,16 @@ void updateObjects(
     bool& anyActiveSpinner
 ) {
     const SkinProfile& activeSkin = ctx.getActiveSkin();
-    for (auto& obj : ctx.beatmap.circles) {
-    bool thisObjDone = obj.isSlider ? obj.sliderDone :
-                      (obj.isSpinner ? obj.sliderDone : (obj.state != NOT_HIT));
-    if (!thisObjDone) allObjectsDone = false;
+    for (size_t i = ctx.firstActiveObjIndex; i < ctx.beatmap.circles.size(); ++i) {
+        auto& obj = ctx.beatmap.circles[i];
+        bool thisObjDone = obj.isSlider ? obj.sliderDone :
+                          (obj.isSpinner ? obj.sliderDone : (obj.state != NOT_HIT));
+        if (!thisObjDone) allObjectsDone = false;
+        if (i == ctx.firstActiveObjIndex && thisObjDone && (!obj.isSlider || songTime > obj.endTime + 150)) {
+            ctx.firstActiveObjIndex++;
+        }
+        if (thisObjDone) continue;
+        if (obj.time > songTime + static_cast<int>(hit50) + 50) break;
 
     u32 objBurstClr = C2D_Color32(
         activeSkin.comboColors[obj.colorIndex % activeSkin.comboColors.size()].r,

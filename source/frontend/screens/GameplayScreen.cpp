@@ -401,7 +401,8 @@ void runGameplayScreen(AppContext& ctx) {
     }
 
     // Buscar coordenadas del siguiente objeto para el indicador de advertencia
-    for (const auto& obj : ctx.beatmap.circles) {
+    for (size_t i = ctx.firstActiveObjIndex; i < ctx.beatmap.circles.size(); ++i) {
+        const auto& obj = ctx.beatmap.circles[i];
         if (obj.time > songTime) {
             ctx.breakNextObjPos = {obj.x, obj.y};
             break;
@@ -635,7 +636,7 @@ void runGameplayScreen(AppContext& ctx) {
             anyHeld = false;
             k1Held = false;
             kActionDown = false;
-            for (size_t i = 0; i < ctx.beatmap.circles.size(); ++i) {
+            for (size_t i = ctx.firstActiveObjIndex; i < ctx.beatmap.circles.size(); ++i) {
                 const auto& obj = ctx.beatmap.circles[i];
                 bool done = obj.isSlider ? obj.sliderDone :
                            (obj.isSpinner ? obj.sliderDone : (obj.state != NOT_HIT));
@@ -672,7 +673,7 @@ void runGameplayScreen(AppContext& ctx) {
             }
         } else if (isAutoPilot) {
             // Mod AutoPilot: apuntado automático a las notas mientras el jugador pulsa las teclas
-            for (size_t i = 0; i < ctx.beatmap.circles.size(); ++i) {
+            for (size_t i = ctx.firstActiveObjIndex; i < ctx.beatmap.circles.size(); ++i) {
                 const auto& obj = ctx.beatmap.circles[i];
                 bool done = obj.isSlider ? obj.sliderDone :
                            (obj.isSpinner ? obj.sliderDone : (obj.state != NOT_HIT));
@@ -773,7 +774,8 @@ void runGameplayScreen(AppContext& ctx) {
             sp.vx *= 0.985f;
             sp.size += 0.042f; // El humo se expande suavemente al disiparse
             if (sp.life <= 0) {
-                ctx.smokeParticles.erase(ctx.smokeParticles.begin() + sm);
+                ctx.smokeParticles[sm] = ctx.smokeParticles.back();
+                ctx.smokeParticles.pop_back();
             } else {
                 ++sm;
             }
@@ -1289,8 +1291,12 @@ void runGameplayScreen(AppContext& ctx) {
             ctx.particles[p].y += ctx.particles[p].vy;
             ctx.particles[p].vy += 0.035f;
             ctx.particles[p].life--;
-            if (ctx.particles[p].life <= 0) ctx.particles.erase(ctx.particles.begin() + p);
-            else ++p;
+            if (ctx.particles[p].life <= 0) {
+                ctx.particles[p] = ctx.particles.back();
+                ctx.particles.pop_back();
+            } else {
+                ++p;
+            }
         }
 
         // Envejecer marcas del Hit Error Meter
@@ -1303,8 +1309,12 @@ void runGameplayScreen(AppContext& ctx) {
         // Envejecer popups de calificacion (300 / 100 / 50 / X) una vez por frame logico
         for (size_t i = 0; i < ctx.popups.size(); ) {
             ctx.popups[i].timer--;
-            if (ctx.popups[i].timer <= 0) ctx.popups.erase(ctx.popups.begin() + i);
-            else ++i;
+            if (ctx.popups[i].timer <= 0) {
+                ctx.popups[i] = ctx.popups.back();
+                ctx.popups.pop_back();
+            } else {
+                ++i;
+            }
         }
 
         // Animaciones y sonido de Combo Pop, Combo Break, Combo Burst y Screen Shake
@@ -1368,22 +1378,26 @@ void runGameplayScreen(AppContext& ctx) {
             ctx.currentReplay.frames.push_back(rf);
         }
 
-        int songEndTime = 0;
-        if (isTaikoPlay) {
-            for (const auto& tn : ctx.taikoEngine.notes) {
-                if (tn.endTime > songEndTime) songEndTime = tn.endTime;
+        if (ctx.gameplaySongEndTimeMs == 0) {
+            int endMs = 0;
+            if (isTaikoPlay) {
+                for (const auto& tn : ctx.taikoEngine.notes) {
+                    if (tn.endTime > endMs) endMs = tn.endTime;
+                }
+            } else if (isCatchPlay) {
+                if (!ctx.catchEngine.fruits.empty()) endMs = ctx.catchEngine.fruits.back().time;
+            } else if (isManiaPlay) {
+                for (const auto& mn : ctx.maniaEngine.notes) {
+                    if (mn.endTime > endMs) endMs = mn.endTime;
+                }
+            } else {
+                for (const auto& c : ctx.beatmap.circles) {
+                    if (c.endTime > endMs) endMs = c.endTime;
+                }
             }
-        } else if (isCatchPlay) {
-            if (!ctx.catchEngine.fruits.empty()) songEndTime = ctx.catchEngine.fruits.back().time;
-        } else if (isManiaPlay) {
-            for (const auto& mn : ctx.maniaEngine.notes) {
-                if (mn.endTime > songEndTime) songEndTime = mn.endTime;
-            }
-        } else {
-            for (const auto& c : ctx.beatmap.circles) {
-                if (c.endTime > songEndTime) songEndTime = c.endTime;
-            }
+            ctx.gameplaySongEndTimeMs = endMs;
         }
+        int songEndTime = ctx.gameplaySongEndTimeMs;
 
         bool notesFinished = (allObjectsDone && songEndTime > 0 && songTime >= songEndTime);
         if (notesFinished || ctx.audio.isSongFinished()) {

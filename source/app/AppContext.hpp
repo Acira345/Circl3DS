@@ -276,6 +276,8 @@ struct AppContext {
     int comboBurstValue = 0;
     int lastComboBurstMilestone = 0;
     int lastNcStep = -999999;
+    size_t firstActiveObjIndex = 0;
+    int gameplaySongEndTimeMs = 0;
 
     // Estado de entrada por fotograma y 3D
     bool stereoEnabledState = false;

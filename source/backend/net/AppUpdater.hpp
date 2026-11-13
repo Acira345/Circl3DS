@@ -29,6 +29,9 @@ public:
     // Inicia la comprobacion en segundo plano (no bloquea el juego)
     void checkForUpdatesAsync(const std::string& customUrl = "");
 
+    // Configura la ruta real del ejecutable .3dsx (argv[0]) para actualizar en el sitio correcto
+    void setExecutablePath(const char* argv0);
+
     // Inicia la descarga e instalacion automatica en segundo plano
     void startInstallAsync();
 
@@ -45,9 +48,10 @@ public:
     float getProgress() const { return m_progress; }
     size_t getBytesReceived() const { return m_bytesReceived; }
     size_t getTotalBytes() const { return m_totalBytes; }
-    const std::string& getRemoteVersion() const { return m_remoteVersion; }
-    const std::string& getChangelog() const { return m_changelog; }
-    const std::string& getStatusMessage() const { return m_statusMessage; }
+    float getSpeedKbps() const { return m_speedKbps; }
+    std::string getRemoteVersion() const;
+    std::string getChangelog() const;
+    std::string getStatusMessage() const;
     bool isCiaMode() const { return m_isCia; }
 
     // Renderizado del dialogo de actualizacion en ambas pantallas
@@ -61,17 +65,22 @@ private:
     static void checkThreadEntry(void* arg);
     static void installThreadEntry(void* arg);
 
+    void joinFinishedWorker();
+    void setStatusMessage(const std::string& msg);
+
     void runCheck();
     void runInstall();
 
-    // HTTP Helper para descargar buffer o archivo con seguimiento y soporte de redirecciones
+    // HTTP Helper compartido con seguimiento de redirecciones y soporte anti-cache
+    bool openHttpGet(const std::string& url, bool noCache, httpcContext& outContext, u32& outContentSize, std::string& errOut);
     bool httpDownloadToMemory(const std::string& url, std::string& outData, std::string& errOut);
     bool httpDownloadAndInstall(const std::string& url, std::string& errOut);
 
-    // Parser JSON ligero y robusto
+    // Parser JSON ligero y robusto (con unescape basico)
     static std::string extractJsonString(const std::string& json, const std::string& key);
     static int extractJsonInt(const std::string& json, const std::string& key);
 
+    mutable LightLock m_lock;
     Thread m_workerThread = nullptr;
     volatile bool m_threadRunning = false;
     volatile bool m_cancelRequested = false;
@@ -80,6 +89,7 @@ private:
     bool m_modalOpen = false;
     bool m_isCia = true;
 
+    std::string m_3dsxTargetPath = "sdmc:/3ds/circl3ds/circl3ds.3dsx";
     std::string m_checkUrl = "";
     std::string m_remoteVersion = "";
     int m_remoteVersionCode = 0;
@@ -91,6 +101,7 @@ private:
     volatile float m_progress = 0.0f;
     volatile size_t m_bytesReceived = 0;
     volatile size_t m_totalBytes = 0;
+    volatile float m_speedKbps = 0.0f;
 
     int m_animTick = 0;
 };

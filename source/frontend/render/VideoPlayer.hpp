@@ -15,8 +15,8 @@
 // Reproductor de Video de Fondo (.3dsv / .mjpg) para Nintendo 3DS
 // - Decodifica fotogramas JPEG (256x128 @ 15-20 FPS) en un hilo secundario de
 //   baja prioridad (Core 1 / tiempo libre de VBlank).
-// - Mantiene una unica textura persistente en VRAM (256x128 GPU_RGBA8 = 128 KB)
-//   y una tabla Morton precalculada para subir fotogramas en < 0.1 ms sin
+// - Mantiene una unica textura persistente en VRAM (256x128 GPU_RGB565 = 64 KB)
+//   y una tabla Morton precalculada para subir fotogramas en < 0.05 ms sin
 //   afectar los 60 FPS del gameplay.
 // - Sincronizado por tiempo absoluto con el reloj de audio: si la consola (ej.
 //   Old 3DS) tarda mas en un fotograma, salta automaticamente al fotograma
@@ -27,7 +27,7 @@ public:
     static constexpr u32 VIDEO_TEX_W = 256;
     static constexpr u32 VIDEO_TEX_H = 128;
     static constexpr u32 VIDEO_PIXELS = VIDEO_TEX_W * VIDEO_TEX_H;
-    static constexpr size_t VIDEO_BYTES = VIDEO_PIXELS * sizeof(u32);
+    static constexpr size_t VIDEO_BYTES = VIDEO_PIXELS * sizeof(u16);
 
     struct FrameEntry {
         uint32_t offset;
@@ -41,8 +41,8 @@ private:
     bool texAllocated = false;
 
     uint16_t mortonMap[VIDEO_PIXELS];
-    u32* decodeBuf = nullptr;
-    u32* readyBuf = nullptr;
+    u16* decodeBuf = nullptr;
+    u16* readyBuf = nullptr;
 
     Thread worker = nullptr;
     LightLock lock;
@@ -142,39 +142,41 @@ private:
 
                 if (!readOk) break;
 
-                // Decodificar JPEG en CPU (hilo secundario)
+                // Decodificar JPEG en CPU (hilo secundario, solo 3 canales RGB: menos heap y sin alpha dummy)
                 int srcW = 0, srcH = 0, comp = 0;
                 unsigned char* pixels = stbi_load_from_memory(
-                    jpegBuf.data(), static_cast<int>(entry.size), &srcW, &srcH, &comp, 4
+                    jpegBuf.data(), static_cast<int>(entry.size), &srcW, &srcH, &comp, 3
                 );
                 if (!pixels || srcW <= 0 || srcH <= 0) {
                     if (pixels) stbi_image_free(pixels);
                     break;
                 }
 
-                // Convertir a formato Morton de la PICA200
+                // Convertir a formato Morton GPU_RGB565 de la PICA200 (16 bpp -> 64 KB)
                 if (static_cast<u32>(srcW) == VIDEO_TEX_W && static_cast<u32>(srcH) == VIDEO_TEX_H) {
                     // Ruta ultrarrapida 1:1 (256x128 exacto, sin reescalado)
                     const unsigned char* p = pixels;
-                    for (u32 i = 0; i < VIDEO_PIXELS; ++i, p += 4) {
-                        decodeBuf[mortonMap[i]] =
-                            (static_cast<u32>(p[0]) << 24) |
-                            (static_cast<u32>(p[1]) << 16) |
-                            (static_cast<u32>(p[2]) << 8)  | 0xFFu;
+                    for (u32 i = 0; i < VIDEO_PIXELS; ++i, p += 3) {
+                        decodeBuf[mortonMap[i]] = static_cast<u16>(
+                            ((static_cast<u32>(p[0]) >> 3) << 11) |
+                            ((static_cast<u32>(p[1]) >> 2) << 5)  |
+                            (static_cast<u32>(p[2]) >> 3)
+                        );
                     }
                 } else {
                     // Ruta con reescalado automatico si el .mjpg tiene otra resolucion
                     for (u32 dy = 0; dy < VIDEO_TEX_H; ++dy) {
                         u32 sy = (dy * static_cast<u32>(srcH)) / VIDEO_TEX_H;
-                        const unsigned char* srcRow = pixels + (sy * srcW * 4);
+                        const unsigned char* srcRow = pixels + (sy * srcW * 3);
                         const uint16_t* mapRow = mortonMap + (dy * VIDEO_TEX_W);
                         for (u32 dx = 0; dx < VIDEO_TEX_W; ++dx) {
                             u32 sx = (dx * static_cast<u32>(srcW)) / VIDEO_TEX_W;
-                            const unsigned char* p = srcRow + (sx * 4);
-                            decodeBuf[mapRow[dx]] =
-                                (static_cast<u32>(p[0]) << 24) |
-                                (static_cast<u32>(p[1]) << 16) |
-                                (static_cast<u32>(p[2]) << 8)  | 0xFFu;
+                            const unsigned char* p = srcRow + (sx * 3);
+                            decodeBuf[mapRow[dx]] = static_cast<u16>(
+                                ((static_cast<u32>(p[0]) >> 3) << 11) |
+                                ((static_cast<u32>(p[1]) >> 2) << 5)  |
+                                (static_cast<u32>(p[2]) >> 3)
+                            );
                         }
                     }
                 }
@@ -273,13 +275,13 @@ private:
     }
 
 public:
-    bool init() {
+    bool init(bool isNew3DS = false) {
         buildMortonTable();
-        decodeBuf = static_cast<u32*>(std::calloc(VIDEO_PIXELS, sizeof(u32)));
-        readyBuf  = static_cast<u32*>(std::calloc(VIDEO_PIXELS, sizeof(u32)));
+        decodeBuf = static_cast<u16*>(std::calloc(VIDEO_PIXELS, sizeof(u16)));
+        readyBuf  = static_cast<u16*>(std::calloc(VIDEO_PIXELS, sizeof(u16)));
         if (!decodeBuf || !readyBuf) return false;
 
-        if (!C3D_TexInit(&tex, VIDEO_TEX_W, VIDEO_TEX_H, GPU_RGBA8)) {
+        if (!C3D_TexInit(&tex, VIDEO_TEX_W, VIDEO_TEX_H, GPU_RGB565)) {
             return false;
         }
         C3D_TexSetFilter(&tex, GPU_LINEAR, GPU_LINEAR);
@@ -306,8 +308,12 @@ public:
         svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
         s32 workerPrio = std::min<s32>(0x3F, prio + 2);
 
-        APT_SetAppCpuTimeLimit(30);
-        worker = threadCreate(threadMain, this, 64 * 1024, workerPrio, 1, false);
+        APT_SetAppCpuTimeLimit(isNew3DS ? 70 : 30);
+        if (isNew3DS) {
+            // En New 3DS usar el núcleo 2 dedicado para no competir con el streaming de audio (núcleo 1)
+            worker = threadCreate(threadMain, this, 64 * 1024, workerPrio, 2, false);
+        }
+        if (!worker) worker = threadCreate(threadMain, this, 64 * 1024, workerPrio, 1, false);
         if (!worker) worker = threadCreate(threadMain, this, 64 * 1024, workerPrio, -2, false);
         return worker != nullptr;
     }
@@ -403,7 +409,7 @@ public:
             }
         }
 
-        // Subir fotograma listo a VRAM si el hilo secundario termino (solo 128 KB memcpy)
+        // Subir fotograma listo a VRAM si el hilo secundario termino (solo 64 KB memcpy)
         LightLock_Lock(&lock);
         if (frameReady && readyGen == fileGeneration) {
             std::memcpy(tex.data, readyBuf, VIDEO_BYTES);

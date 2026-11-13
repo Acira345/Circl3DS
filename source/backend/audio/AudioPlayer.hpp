@@ -156,6 +156,34 @@ private:
     ndspWaveBuf waveBuf[AUDIO_BUFFER_COUNT];
     bool preloadedBufReady[AUDIO_BUFFER_COUNT] = { false, false, false };
 
+    enum StreamBufState : uint8_t {
+        STREAM_BUF_IDLE = 0,
+        STREAM_BUF_EMPTY = 1,
+        STREAM_BUF_DECODED = 2,
+        STREAM_BUF_QUEUED = 3
+    };
+    struct AsyncStreamSlot {
+        size_t samplesRead = 0;
+        bool looped = false;
+        u64 loopSeekOffsetSamples = 0;
+        bool eof = false;
+    };
+    mutable LightLock streamDecodeLock;
+    mutable LightLock streamStateLock;
+    bool streamLocksInit = false;
+    volatile bool streamActive = false;
+    uint32_t streamGen = 0;
+    StreamBufState streamBufState[AUDIO_BUFFER_COUNT] = { STREAM_BUF_IDLE, STREAM_BUF_IDLE, STREAM_BUF_IDLE };
+    AsyncStreamSlot streamSlots[AUDIO_BUFFER_COUNT];
+
+    void ensureStreamLocks() {
+        if (!streamLocksInit) {
+            LightLock_Init(&streamDecodeLock);
+            LightLock_Init(&streamStateLock);
+            streamLocksInit = true;
+        }
+    }
+
     u64 totalSamplesPlayed = 0;
     u64 seekOffsetSamples = 0;
     u64 leadInStartTick = 0;
@@ -269,10 +297,12 @@ private:
     }
 
     void runPreviewWorker() {
+        u32 lastHandledPreviewId = 0;
         while (!previewQuit) {
             LightEvent_Wait(&previewWake);
             if (previewQuit) break;
 
+            // 1. Si hay una petición nueva de vista previa de canción, priorizarla sobre el streaming
             LightLock_Lock(&previewLock);
             std::string path = reqPreviewPath;
             float rate = reqPreviewRate;
@@ -281,130 +311,171 @@ private:
             u32 id = reqPreviewId;
             LightLock_Unlock(&previewLock);
 
-            if (path.empty()) continue;
+            if (!path.empty() && id != lastHandledPreviewId) {
+                lastHandledPreviewId = id;
+                PreparedPreview p;
+                p.usingVorbis = false;
+                p.vorbisStream = nullptr;
+                p.seekOffsetSamples = 0;
+                p.speedRate = std::max(0.5f, std::min(2.0f, rate));
+                p.startOffsetMs = startOff;
+                p.loop = loop;
 
-            PreparedPreview p;
-            p.usingVorbis = false;
-            p.vorbisStream = nullptr;
-            p.seekOffsetSamples = 0;
-            p.speedRate = std::max(0.5f, std::min(2.0f, rate));
-            p.startOffsetMs = startOff;
-            p.loop = loop;
-
-            bool tryOggFirst = hasOggHeaderOrExt(path);
-            if (tryOggFirst) {
-                int err = 0;
-                p.vorbisStream = stb_vorbis_open_filename(path.c_str(), &err, nullptr);
-                if (p.vorbisStream) {
-                    stb_vorbis_info vinfo = stb_vorbis_get_info(p.vorbisStream);
-                    p.sampleRate = (vinfo.sample_rate > 0) ? vinfo.sample_rate : 44100;
-                    p.musicChannels = (vinfo.channels == 1) ? 1 : 2;
-                    p.usingVorbis = true;
-                }
-            }
-
-            if (!p.usingVorbis) {
-                std::memset(&p.mp3, 0, sizeof(p.mp3));
-                p.mp3Io = new Mp3StreamIo();
-                if (p.mp3Io->open(path) && mp3dec_ex_open_cb(&p.mp3, &p.mp3Io->io, MP3D_SEEK_TO_BYTE | MP3D_DO_NOT_SCAN) == 0 && p.mp3.info.hz > 0) {
-                    p.sampleRate = static_cast<u32>(p.mp3.info.hz);
-                    p.musicChannels = (p.mp3.info.channels == 1) ? 1 : 2;
-                } else {
-                    if (p.mp3.file.buffer) mp3dec_ex_close(&p.mp3);
-                    std::memset(&p.mp3, 0, sizeof(p.mp3));
-                    if (p.mp3Io) { delete p.mp3Io; p.mp3Io = nullptr; }
+                bool tryOggFirst = hasOggHeaderOrExt(path);
+                if (tryOggFirst) {
                     int err = 0;
                     p.vorbisStream = stb_vorbis_open_filename(path.c_str(), &err, nullptr);
-                    if (!p.vorbisStream) {
-                        p.release();
-                        continue;
+                    if (p.vorbisStream) {
+                        stb_vorbis_info vinfo = stb_vorbis_get_info(p.vorbisStream);
+                        p.sampleRate = (vinfo.sample_rate > 0) ? vinfo.sample_rate : 44100;
+                        p.musicChannels = (vinfo.channels == 1) ? 1 : 2;
+                        p.usingVorbis = true;
                     }
-                    stb_vorbis_info vinfo = stb_vorbis_get_info(p.vorbisStream);
-                    p.sampleRate = (vinfo.sample_rate > 0) ? vinfo.sample_rate : 44100;
-                    p.musicChannels = (vinfo.channels == 1) ? 1 : 2;
-                    p.usingVorbis = true;
                 }
-            }
 
-            if (previewQuit || id != reqPreviewId) {
-                p.release();
-                continue;
-            }
-
-            if (startOff > 0) {
-                if (p.usingVorbis && p.vorbisStream) {
-                    unsigned int targetFrame = static_cast<unsigned int>((static_cast<u64>(startOff) * p.sampleRate) / 1000ULL);
-                    if (stb_vorbis_seek(p.vorbisStream, targetFrame)) {
-                        int act = stb_vorbis_get_sample_offset(p.vorbisStream);
-                        p.seekOffsetSamples = (act >= 0) ? static_cast<u64>(act) : targetFrame;
+                if (!p.usingVorbis) {
+                    std::memset(&p.mp3, 0, sizeof(p.mp3));
+                    p.mp3Io = new Mp3StreamIo();
+                    if (p.mp3Io->open(path) && mp3dec_ex_open_cb(&p.mp3, &p.mp3Io->io, MP3D_SEEK_TO_BYTE | MP3D_DO_NOT_SCAN) == 0 && p.mp3.info.hz > 0) {
+                        p.sampleRate = static_cast<u32>(p.mp3.info.hz);
+                        p.musicChannels = (p.mp3.info.channels == 1) ? 1 : 2;
+                    } else {
+                        if (p.mp3.file.buffer) mp3dec_ex_close(&p.mp3);
+                        std::memset(&p.mp3, 0, sizeof(p.mp3));
+                        if (p.mp3Io) { delete p.mp3Io; p.mp3Io = nullptr; }
+                        int err = 0;
+                        p.vorbisStream = stb_vorbis_open_filename(path.c_str(), &err, nullptr);
+                        if (!p.vorbisStream) {
+                            p.release();
+                            continue;
+                        }
+                        stb_vorbis_info vinfo = stb_vorbis_get_info(p.vorbisStream);
+                        p.sampleRate = (vinfo.sample_rate > 0) ? vinfo.sample_rate : 44100;
+                        p.musicChannels = (vinfo.channels == 1) ? 1 : 2;
+                        p.usingVorbis = true;
                     }
-                } else if (p.sampleRate > 0 && p.musicChannels > 0) {
-                    seekMp3ToMs(p.mp3, p.mp3Io, startOff, p.sampleRate, p.musicChannels, p.seekOffsetSamples);
                 }
-            }
 
-            if (previewQuit || id != reqPreviewId) {
-                p.release();
-                continue;
-            }
-
-            size_t bufferSize = AUDIO_BUFFER_FRAMES * p.musicChannels * sizeof(s16);
-            bool allocOk = true;
-            for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
-                p.audioBuffer[i] = static_cast<s16*>(linearAlloc(bufferSize));
-                if (!p.audioBuffer[i]) allocOk = false;
-            }
-            if (!allocOk) {
-                p.release();
-                continue;
-            }
-
-            for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
-                size_t samplesToRead = AUDIO_BUFFER_FRAMES * p.musicChannels;
-                size_t samplesRead = 0;
-                if (p.usingVorbis && p.vorbisStream) {
-                    int frames = stb_vorbis_get_samples_short_interleaved(
-                        p.vorbisStream, p.musicChannels, p.audioBuffer[i], static_cast<int>(samplesToRead)
-                    );
-                    if (frames > 0) samplesRead = static_cast<size_t>(frames) * p.musicChannels;
-                } else {
-                    samplesRead = mp3dec_ex_read(&p.mp3, p.audioBuffer[i], samplesToRead);
+                if (previewQuit || id != reqPreviewId) {
+                    p.release();
+                    continue;
                 }
-                if (i == 0 && samplesRead == 0 && startOff > 0) {
-                    // Si el PreviewTime del .osu excede la duración real del audio, rebobinar al inicio (0 ms)
+
+                if (startOff > 0) {
                     if (p.usingVorbis && p.vorbisStream) {
-                        stb_vorbis_seek(p.vorbisStream, 0);
+                        unsigned int targetFrame = static_cast<unsigned int>((static_cast<u64>(startOff) * p.sampleRate) / 1000ULL);
+                        if (stb_vorbis_seek(p.vorbisStream, targetFrame)) {
+                            int act = stb_vorbis_get_sample_offset(p.vorbisStream);
+                            p.seekOffsetSamples = (act >= 0) ? static_cast<u64>(act) : targetFrame;
+                        }
+                    } else if (p.sampleRate > 0 && p.musicChannels > 0) {
+                        seekMp3ToMs(p.mp3, p.mp3Io, startOff, p.sampleRate, p.musicChannels, p.seekOffsetSamples);
+                    }
+                }
+
+                if (previewQuit || id != reqPreviewId) {
+                    p.release();
+                    continue;
+                }
+
+                size_t bufferSize = AUDIO_BUFFER_FRAMES * p.musicChannels * sizeof(s16);
+                bool allocOk = true;
+                for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
+                    p.audioBuffer[i] = static_cast<s16*>(linearAlloc(bufferSize));
+                    if (!p.audioBuffer[i]) allocOk = false;
+                }
+                if (!allocOk) {
+                    p.release();
+                    continue;
+                }
+
+                for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
+                    size_t samplesToRead = AUDIO_BUFFER_FRAMES * p.musicChannels;
+                    size_t samplesRead = 0;
+                    if (p.usingVorbis && p.vorbisStream) {
                         int frames = stb_vorbis_get_samples_short_interleaved(
                             p.vorbisStream, p.musicChannels, p.audioBuffer[i], static_cast<int>(samplesToRead)
                         );
                         if (frames > 0) samplesRead = static_cast<size_t>(frames) * p.musicChannels;
                     } else {
-                        p.mp3.last_error = 0;
-                        seekMp3ToMs(p.mp3, p.mp3Io, 0, p.sampleRate, p.musicChannels, p.seekOffsetSamples);
                         samplesRead = mp3dec_ex_read(&p.mp3, p.audioBuffer[i], samplesToRead);
                     }
-                    p.startOffsetMs = 0;
-                    p.seekOffsetSamples = 0;
+                    if (i == 0 && samplesRead == 0 && startOff > 0) {
+                        if (p.usingVorbis && p.vorbisStream) {
+                            stb_vorbis_seek(p.vorbisStream, 0);
+                            int frames = stb_vorbis_get_samples_short_interleaved(
+                                p.vorbisStream, p.musicChannels, p.audioBuffer[i], static_cast<int>(samplesToRead)
+                            );
+                            if (frames > 0) samplesRead = static_cast<size_t>(frames) * p.musicChannels;
+                        } else {
+                            p.mp3.last_error = 0;
+                            seekMp3ToMs(p.mp3, p.mp3Io, 0, p.sampleRate, p.musicChannels, p.seekOffsetSamples);
+                            samplesRead = mp3dec_ex_read(&p.mp3, p.audioBuffer[i], samplesToRead);
+                        }
+                        p.startOffsetMs = 0;
+                        p.seekOffsetSamples = 0;
+                    }
+                    if (samplesRead > 0) {
+                        DSP_FlushDataCache(p.audioBuffer[i], samplesRead * sizeof(s16));
+                    }
+                    p.bufferSamples[i] = samplesRead;
                 }
-                if (samplesRead > 0) {
-                    DSP_FlushDataCache(p.audioBuffer[i], samplesRead * sizeof(s16));
+
+                p.loadedMusicPath = path;
+                p.id = id;
+                p.ready = true;
+
+                LightLock_Lock(&previewLock);
+                if (id == reqPreviewId && !previewQuit) {
+                    preparedPreview.release();
+                    preparedPreview = p;
+                    p.reset();
+                } else {
+                    p.release();
                 }
-                p.bufferSamples[i] = samplesRead;
+                LightLock_Unlock(&previewLock);
             }
 
-            p.loadedMusicPath = path;
-            p.id = id;
-            p.ready = true;
+            // 2. Decodificación asíncrona de búferes de música en reproducción (elimina I/O SD y Vorbis/MP3 del hilo principal)
+            while (!previewQuit && streamActive) {
+                if (reqPreviewId != lastHandledPreviewId && !reqPreviewPath.empty()) break;
 
-            LightLock_Lock(&previewLock);
-            if (id == reqPreviewId && !previewQuit) {
-                preparedPreview.release();
-                preparedPreview = p;
-                p.reset();
-            } else {
-                p.release();
+                LightLock_Lock(&streamDecodeLock);
+                int targetSlot = -1;
+                uint32_t myGen = streamGen;
+                bool canDecode = (streamActive && isLoaded && !eofReached);
+                if (canDecode) {
+                    LightLock_Lock(&streamStateLock);
+                    for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
+                        if (streamBufState[i] == STREAM_BUF_EMPTY) {
+                            targetSlot = static_cast<int>(i);
+                            break;
+                        }
+                    }
+                    LightLock_Unlock(&streamStateLock);
+                }
+
+                if (targetSlot < 0) {
+                    LightLock_Unlock(&streamDecodeLock);
+                    break;
+                }
+
+                AsyncStreamSlot slot;
+                decodeChunkIntoSlot(targetSlot, slot);
+
+                LightLock_Lock(&streamStateLock);
+                if (myGen == streamGen && streamActive) {
+                    streamSlots[targetSlot] = slot;
+                    if (slot.eof) {
+                        eofReached = true;
+                        streamBufState[targetSlot] = STREAM_BUF_IDLE;
+                    } else {
+                        streamBufState[targetSlot] = STREAM_BUF_DECODED;
+                    }
+                }
+                LightLock_Unlock(&streamStateLock);
+                LightLock_Unlock(&streamDecodeLock);
             }
-            LightLock_Unlock(&previewLock);
         }
     }
 
@@ -793,20 +864,99 @@ private:
         ndspChnWaveBufAdd(chn, &wav.waveBuf);
     }
 
+    void decodeChunkIntoSlot(int index, AsyncStreamSlot& out) {
+        out = AsyncStreamSlot();
+        if (!isLoaded || eofReached || !audioBuffer[index]) {
+            out.eof = true;
+            return;
+        }
+        size_t samplesToRead = AUDIO_BUFFER_FRAMES * musicChannels;
+        size_t samplesRead = 0;
+
+        if (usingVorbis && vorbisStream) {
+            int frames = stb_vorbis_get_samples_short_interleaved(
+                vorbisStream, musicChannels, audioBuffer[index], static_cast<int>(samplesToRead)
+            );
+            if (frames > 0) {
+                samplesRead = static_cast<size_t>(frames) * musicChannels;
+            }
+        } else {
+            samplesRead = mp3dec_ex_read(&mp3, audioBuffer[index], samplesToRead);
+        }
+
+        // Bucle sin interrupción (Seamless Loop): si se alcanza el final de la pista y el bucle está activo,
+        // rebobinar de inmediato al punto de inicio (PreviewTime o 0) y completar el resto del búfer actual.
+        if (samplesRead < samplesToRead && loopEnabled && sampleRate > 0 && musicChannels > 0) {
+            if (usingVorbis && vorbisStream) {
+                unsigned int targetFrame = static_cast<unsigned int>((static_cast<u64>(loopOffsetMs) * sampleRate) / 1000ULL);
+                if (!stb_vorbis_seek(vorbisStream, targetFrame)) {
+                    stb_vorbis_seek(vorbisStream, 0);
+                    targetFrame = 0;
+                }
+                int act = stb_vorbis_get_sample_offset(vorbisStream);
+                if (act >= 0) targetFrame = static_cast<unsigned int>(act);
+                seekOffsetSamples = targetFrame;
+            } else {
+                if (!seekMp3ToMs(mp3, mp3Io, loopOffsetMs, sampleRate, musicChannels, seekOffsetSamples)) {
+                    seekMp3ToMs(mp3, mp3Io, 0, sampleRate, musicChannels, seekOffsetSamples);
+                }
+            }
+
+            out.looped = true;
+            out.loopSeekOffsetSamples = seekOffsetSamples;
+
+            size_t remaining = samplesToRead - samplesRead;
+            size_t extra = 0;
+            if (usingVorbis && vorbisStream) {
+                int frames = stb_vorbis_get_samples_short_interleaved(
+                    vorbisStream, musicChannels, audioBuffer[index] + samplesRead, static_cast<int>(remaining)
+                );
+                if (frames > 0) extra = static_cast<size_t>(frames) * musicChannels;
+            } else {
+                extra = mp3dec_ex_read(&mp3, audioBuffer[index] + samplesRead, remaining);
+            }
+            samplesRead += extra;
+        }
+
+        if (samplesRead == 0) {
+            out.eof = true;
+            return;
+        }
+
+        DSP_FlushDataCache(audioBuffer[index], samplesRead * sizeof(s16));
+        out.samplesRead = samplesRead;
+    }
+
     void beginNDSPPlayback() {
         inLeadIn = false;
         totalSamplesPlayed = seekOffsetSamples;
         musicStartTick = osGetTime();
         applyChannelGain(musicChannel, musicGain);
+        ensureStreamLocks();
+        LightLock_Lock(&streamDecodeLock);
+        LightLock_Lock(&streamStateLock);
+        streamGen++;
         for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
             if (preloadedBufReady[i] && waveBuf[i].nsamples > 0) {
                 preloadedBufReady[i] = false;
                 waveBuf[i].status = NDSP_WBUF_FREE;
                 ndspChnWaveBufAdd(musicChannel, &waveBuf[i]);
+                streamBufState[i] = STREAM_BUF_QUEUED;
             } else {
                 preloadedBufReady[i] = false;
-                fillAndPlayBuffer(i);
+                if (!previewWorker || i == 0) {
+                    fillAndPlayBuffer(i);
+                    streamBufState[i] = (waveBuf[i].status != NDSP_WBUF_DONE) ? STREAM_BUF_QUEUED : STREAM_BUF_IDLE;
+                } else {
+                    streamBufState[i] = eofReached ? STREAM_BUF_IDLE : STREAM_BUF_EMPTY;
+                }
             }
+        }
+        streamActive = (previewWorker != nullptr && !eofReached);
+        LightLock_Unlock(&streamStateLock);
+        LightLock_Unlock(&streamDecodeLock);
+        if (streamActive) {
+            LightEvent_Signal(&previewWake);
         }
     }
 
@@ -818,6 +968,7 @@ public:
     }
 
     bool startAsyncLoader(bool isNew3DS = false) {
+        ensureStreamLocks();
         LightLock_Init(&previewLock);
         LightEvent_Init(&previewWake, RESET_ONESHOT);
         previewQuit = false;
@@ -828,7 +979,7 @@ public:
         s32 workerPrio = std::min<s32>(0x3F, prio + 1);
 
         APT_SetAppCpuTimeLimit(isNew3DS ? 70 : 30);
-        // Ejecutar en el núcleo 1 para paralelizar con AsyncTextureLoader (que usa el núcleo 2 en New 3DS)
+        // Ejecutar en el núcleo 1 para paralelizar con AsyncTextureLoader / VideoPlayer (que usan el núcleo 2 en New 3DS)
         previewWorker = threadCreate(previewThreadMain, this, 64 * 1024, workerPrio, 1, false);
         if (isNew3DS && !previewWorker) {
             previewWorker = threadCreate(previewThreadMain, this, 64 * 1024, workerPrio, 2, false);
@@ -840,6 +991,7 @@ public:
     void stopAsyncLoader() {
         if (!previewWorker) return;
         previewQuit = true;
+        streamActive = false;
         LightLock_Lock(&previewLock);
         reqPreviewPath.clear();
         reqPreviewId++;
@@ -957,6 +1109,10 @@ public:
                 p.audioBuffer[i] = nullptr;
             }
 
+            ensureStreamLocks();
+            LightLock_Lock(&streamDecodeLock);
+            LightLock_Lock(&streamStateLock);
+            streamGen++;
             std::memset(&waveBuf, 0, sizeof(waveBuf));
             for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
                 waveBuf[i].data_vaddr = audioBuffer[i];
@@ -964,9 +1120,11 @@ public:
                     waveBuf[i].nsamples = p.bufferSamples[i] / musicChannels;
                     waveBuf[i].status = NDSP_WBUF_FREE;
                     ndspChnWaveBufAdd(musicChannel, &waveBuf[i]);
+                    streamBufState[i] = STREAM_BUF_QUEUED;
                 } else {
                     waveBuf[i].nsamples = 0;
                     waveBuf[i].status = NDSP_WBUF_DONE;
+                    streamBufState[i] = STREAM_BUF_IDLE;
                 }
             }
 
@@ -975,6 +1133,9 @@ public:
             lastReportedTimeMs = -999999;
             musicStartTick = osGetTime();
             musicPlayheadOffsetMs = (p.startOffsetMs > 0) ? static_cast<u64>(p.startOffsetMs) : 0;
+            streamActive = (previewWorker != nullptr);
+            LightLock_Unlock(&streamStateLock);
+            LightLock_Unlock(&streamDecodeLock);
         }
     }
 
@@ -1298,6 +1459,16 @@ public:
     bool seekToMs(int targetMs) {
         if (!isLoaded || sampleRate == 0) return false;
 
+        ensureStreamLocks();
+        LightLock_Lock(&streamDecodeLock);
+        LightLock_Lock(&streamStateLock);
+        streamGen++;
+        streamActive = false;
+        for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
+            streamBufState[i] = STREAM_BUF_IDLE;
+        }
+        LightLock_Unlock(&streamStateLock);
+
         // Si el salto nos sitúa en tiempo de espera previo (Lead-In)
         lastReportedTimeMs = -999999;
         if (targetMs < 0) {
@@ -1317,6 +1488,7 @@ public:
             if (dspReady) {
                 ndspChnReset(musicChannel);
             }
+            LightLock_Unlock(&streamDecodeLock);
             return true;
         }
 
@@ -1341,6 +1513,7 @@ public:
         }
 
         eofReached = false;
+        bool needWake = false;
         if (dspReady) {
             ndspChnReset(musicChannel);
             ndspChnSetInterp(musicChannel, NDSP_INTERP_POLYPHASE);
@@ -1354,10 +1527,25 @@ public:
                 waveBuf[i].status = NDSP_WBUF_DONE;
                 waveBuf[i].nsamples = 0;
             }
-            for (size_t i = 0; i < 2 && i < AUDIO_BUFFER_COUNT; ++i) {
-                fillAndPlayBuffer(i);
+            if (!previewWorker) {
+                for (size_t i = 0; i < 2 && i < AUDIO_BUFFER_COUNT; ++i) {
+                    fillAndPlayBuffer(i);
+                }
+            } else {
+                // Rellenar 1 buffer inmediato y delegar los restantes al worker asíncrono
+                fillAndPlayBuffer(0);
+                LightLock_Lock(&streamStateLock);
+                streamBufState[0] = (waveBuf[0].status != NDSP_WBUF_DONE) ? STREAM_BUF_QUEUED : STREAM_BUF_IDLE;
+                for (size_t i = 1; i < AUDIO_BUFFER_COUNT; ++i) {
+                    streamBufState[i] = eofReached ? STREAM_BUF_IDLE : STREAM_BUF_EMPTY;
+                    if (streamBufState[i] == STREAM_BUF_EMPTY) needWake = true;
+                }
+                streamActive = !eofReached;
+                LightLock_Unlock(&streamStateLock);
             }
         }
+        LightLock_Unlock(&streamDecodeLock);
+        if (needWake) LightEvent_Signal(&previewWake);
         return true;
     }
 
@@ -1436,16 +1624,59 @@ public:
             return;
         }
 
+        if (!previewWorker) {
+            for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
+                if (waveBuf[i].status == NDSP_WBUF_DONE) {
+                    if (waveBuf[i].nsamples > 0) {
+                        totalSamplesPlayed += waveBuf[i].nsamples;
+                        waveBuf[i].nsamples = 0;
+                    }
+                    if (!eofReached) {
+                        fillAndPlayBuffer(i);
+                    }
+                }
+            }
+            return;
+        }
+
+        ensureStreamLocks();
+        bool needWake = false;
+        LightLock_Lock(&streamStateLock);
         for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
-            if (waveBuf[i].status == NDSP_WBUF_DONE) {
+            if (streamBufState[i] == STREAM_BUF_QUEUED && waveBuf[i].status == NDSP_WBUF_DONE) {
                 if (waveBuf[i].nsamples > 0) {
                     totalSamplesPlayed += waveBuf[i].nsamples;
                     waveBuf[i].nsamples = 0;
                 }
-                if (!eofReached) {
-                    fillAndPlayBuffer(i);
-                }
+                streamBufState[i] = eofReached ? STREAM_BUF_IDLE : STREAM_BUF_EMPTY;
             }
+        }
+        for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
+            if (streamBufState[i] == STREAM_BUF_DECODED) {
+                const AsyncStreamSlot& slot = streamSlots[i];
+                if (slot.looped) {
+                    totalSamplesPlayed = slot.loopSeekOffsetSamples;
+                    musicStartTick = osGetTime();
+                    musicPlayheadOffsetMs = static_cast<u64>(loopOffsetMs);
+                    lastReportedTimeMs = loopOffsetMs;
+                }
+                if (slot.samplesRead > 0 && musicChannels > 0) {
+                    waveBuf[i].nsamples = slot.samplesRead / musicChannels;
+                    waveBuf[i].status = NDSP_WBUF_FREE;
+                    ndspChnWaveBufAdd(musicChannel, &waveBuf[i]);
+                    streamBufState[i] = STREAM_BUF_QUEUED;
+                } else {
+                    streamBufState[i] = STREAM_BUF_IDLE;
+                }
+            } else if (streamBufState[i] == STREAM_BUF_EMPTY && !eofReached) {
+                needWake = true;
+            }
+        }
+        streamActive = !eofReached;
+        LightLock_Unlock(&streamStateLock);
+
+        if (needWake) {
+            LightEvent_Signal(&previewWake);
         }
     }
 
@@ -1484,6 +1715,18 @@ public:
         if (!isPlaying || inLeadIn || isPaused) return false;
         if (loopEnabled) return false;
         if (!eofReached) return false;
+        if (previewWorker && streamLocksInit) {
+            LightLock_Lock(&streamStateLock);
+            for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
+                if (streamBufState[i] == STREAM_BUF_DECODED || streamBufState[i] == STREAM_BUF_QUEUED ||
+                    waveBuf[i].status != NDSP_WBUF_DONE) {
+                    LightLock_Unlock(&streamStateLock);
+                    return false;
+                }
+            }
+            LightLock_Unlock(&streamStateLock);
+            return true;
+        }
         for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
             if (waveBuf[i].status != NDSP_WBUF_DONE) return false;
         }
@@ -1491,6 +1734,16 @@ public:
     }
 
     void stopMusicInternal() {
+        ensureStreamLocks();
+        LightLock_Lock(&streamDecodeLock);
+        LightLock_Lock(&streamStateLock);
+        streamGen++;
+        streamActive = false;
+        for (size_t i = 0; i < AUDIO_BUFFER_COUNT; ++i) {
+            streamBufState[i] = STREAM_BUF_IDLE;
+        }
+        LightLock_Unlock(&streamStateLock);
+
         if (mp3Io && !isLoaded) {
             delete mp3Io;
             mp3Io = nullptr;
@@ -1527,6 +1780,7 @@ public:
                 mp3Io = nullptr;
             }
         }
+        LightLock_Unlock(&streamDecodeLock);
     }
 
     void stopMusic() {

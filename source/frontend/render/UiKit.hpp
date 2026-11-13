@@ -7,6 +7,8 @@
 #include <vector>
 #include "../../backend/i18n/Localization.hpp"
 
+void drawCachedTextParse(C2D_Text* outText, C2D_TextBuf buf, const char* str);
+
 // Kit visual estilo osu! lazer: degradados, tarjetas inclinadas, triangulos flotantes, brillos y pildoras.
 namespace Ui {
 
@@ -133,12 +135,21 @@ inline void tab(float x, float y, float w, float h, float z, bool active, u32 ac
 }
 
 inline void ring(float x, float y, float z, float r, float th, u32 c, int seg = 32) {
+    if (seg < 3) return;
     const float step = 6.2831853f / seg;
-    for (int i = 0; i < seg; ++i) {
-        float a0 = i * step, a1 = (i + 1) * step;
-        C2D_DrawLine(x + std::cos(a0) * r, y + std::sin(a0) * r, c,
-                     x + std::cos(a1) * r, y + std::sin(a1) * r, c, th, z);
+    const float cosS = std::cos(step);
+    const float sinS = std::sin(step);
+    float ux = 1.0f, uy = 0.0f;
+    float px = x + r, py = y;
+    for (int i = 1; i < seg; ++i) {
+        float nx = ux * cosS - uy * sinS;
+        float ny = ux * sinS + uy * cosS;
+        ux = nx; uy = ny;
+        float cx = x + ux * r, cy = y + uy * r;
+        C2D_DrawLine(px, py, c, cx, cy, c, th, z);
+        px = cx; py = cy;
     }
+    C2D_DrawLine(px, py, c, x + r, y, c, th, z);
 }
 
 // Fondo animado: degradado + triangulos y cuadrados flotantes (como el menu de osu!lazer)
@@ -180,8 +191,7 @@ inline void lazerHeader(float w, float z, const char* title, const char* rightTa
     pill(10.0f, 4.0f, 38.0f, 16.0f, z + 0.01f, accentClr);
     if (textBuf) {
         C2D_Text t;
-        C2D_TextParse(&t, textBuf, "Circl");
-        C2D_TextOptimize(&t);
+        drawCachedTextParse(&t, textBuf, "Circl");
         float tw = 0.0f, th = 0.0f;
         C2D_TextGetDimensions(&t, 0.34f, 0.34f, &tw, &th);
         C2D_DrawText(&t, C2D_WithColor, 29.0f - tw * 0.5f, 12.0f - th * 0.5f, z + 0.02f, 0.34f, 0.34f, rgba(255, 255, 255));
@@ -189,8 +199,7 @@ inline void lazerHeader(float w, float z, const char* title, const char* rightTa
         // Titulo junto a la pastilla
         if (title && title[0]) {
             C2D_Text tTitle;
-            C2D_TextParse(&tTitle, textBuf, title);
-            C2D_TextOptimize(&tTitle);
+            drawCachedTextParse(&tTitle, textBuf, title);
             C2D_DrawText(&tTitle, C2D_WithColor, 54.0f, 5.5f, z + 0.02f, 0.40f, 0.40f, rgba(255, 255, 255));
         }
 
@@ -201,15 +210,13 @@ inline void lazerHeader(float w, float z, const char* title, const char* rightTa
         C2D_DrawCircleSolid(dotX, 12.0f, z + 0.02f, 3.2f, dotClr);
 
         C2D_Text tConn;
-        C2D_TextParse(&tConn, textBuf, connected ? LOC(STR_CONN_CONNECTED) : LOC(STR_CONN_LOCAL));
-        C2D_TextOptimize(&tConn);
+        drawCachedTextParse(&tConn, textBuf, connected ? LOC(STR_CONN_CONNECTED) : LOC(STR_CONN_LOCAL));
         C2D_DrawText(&tConn, C2D_WithColor, dotX + 7.0f, 6.5f, z + 0.02f, 0.33f, 0.33f, dotClr);
 
         if (rightTag && rightTag[0]) {
             C2D_DrawCircleSolid(w - 52.0f, 12.0f, z + 0.02f, 1.2f, rgba(130, 120, 155));
             C2D_Text tRight;
-            C2D_TextParse(&tRight, textBuf, rightTag);
-            C2D_TextOptimize(&tRight);
+            drawCachedTextParse(&tRight, textBuf, rightTag);
             C2D_DrawText(&tRight, C2D_WithColor, w - 45.0f, 6.5f, z + 0.02f, 0.33f, 0.33f, accentClr);
         }
     }
@@ -246,8 +253,7 @@ inline void slantButton(float x, float y, float w, float h, float slant, u32 acc
         bool compact = (w < 110.0f);
         if (title && title[0]) {
             C2D_Text tTitle;
-            C2D_TextParse(&tTitle, textBuf, title);
-            C2D_TextOptimize(&tTitle);
+            drawCachedTextParse(&tTitle, textBuf, title);
             if (compact) {
                 float tw = 0.0f, th = 0.0f;
                 float scl = 0.36f;
@@ -261,8 +267,7 @@ inline void slantButton(float x, float y, float w, float h, float slant, u32 acc
         }
         if (subtitle && subtitle[0]) {
             C2D_Text tSub;
-            C2D_TextParse(&tSub, textBuf, subtitle);
-            C2D_TextOptimize(&tSub);
+            drawCachedTextParse(&tSub, textBuf, subtitle);
             u32 subClr = selected ? brighten(accentClr, 1.35f) : withAlpha(brighten(accentClr, 1.20f), 225);
             if (compact) {
                 float tw = 0.0f, th = 0.0f;
@@ -276,8 +281,7 @@ inline void slantButton(float x, float y, float w, float h, float slant, u32 acc
         }
         if (selected && !compact) {
             C2D_Text tSel;
-            C2D_TextParse(&tSel, textBuf, ">>");
-            C2D_TextOptimize(&tSel);
+            drawCachedTextParse(&tSel, textBuf, ">>");
             C2D_DrawText(&tSel, C2D_WithColor, rx + w - 24.0f, y + h * 0.5f - 6.5f, z + 0.02f, 0.36f, 0.36f, accentClr);
         }
     }
